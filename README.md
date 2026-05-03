@@ -1,4 +1,4 @@
-# Skripsi Finance
+# Logam Mulia
 
 Project ini berisi backend Express/Prisma dan frontend Next.js.
 
