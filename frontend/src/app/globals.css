@@ -1,0 +1,260 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base Layer ──────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    /* Font families */
+    --font-heading: 'Playfair Display', Georgia, serif;
+    --font-body:    'Inter', system-ui, sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    /* Semantic color tokens (for use in vanilla CSS / SVGs) */
+    --color-gold:       #d4a84b;
+    --color-gold-light: #ffdea2;
+    --color-navy:       #0F1B2D;
+    --color-surface:    #f8f9fa;
+    --color-on-surface: #191c1d;
+    --color-border:     #d2c5b1;
+
+    /* Interaction */
+    --transition-fast:    150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-base:    200ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow:    300ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-spring:  300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Elevation shadows — defined here so @layer components can use them */
+    --shadow-low:  0 1px 3px 0 rgba(15,27,45,0.08), 0 1px 2px -1px rgba(15,27,45,0.04);
+    --shadow-mid:  0 4px 12px -2px rgba(15,27,45,0.12), 0 2px 6px -2px rgba(15,27,45,0.06);
+    --shadow-high: 0 16px 40px -4px rgba(15,27,45,0.18), 0 8px 16px -8px rgba(15,27,45,0.10);
+    --shadow-gold: 0 8px 24px -4px rgba(212,168,75,0.25);
+  }
+
+  html {
+    font-family:             var(--font-body);
+    -webkit-font-smoothing:  antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior:         smooth;
+    background-color:        var(--color-surface);
+    color:                   var(--color-on-surface);
+  }
+
+  /* ── Typography Scale ─────────────────────────────────────────────── */
+  /* All headings: serif font automatically */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+
+  /* Automatic size scale — follows design system tokens */
+  /* Overridable per-component with a utility class */
+  h1 { @apply text-display-lg; }
+  h2 { @apply text-display-md; }
+  h3 { @apply text-headline-sm; }
+  h4 { @apply text-[20px] font-semibold leading-snug; }
+  h5 { @apply text-[18px] font-semibold leading-snug; }
+  h6 { @apply text-[16px] font-semibold leading-snug; }
+
+  /* Body text */
+  p  { @apply text-body-md; }
+  small { @apply text-[13px] leading-relaxed; }
+
+  /* Links */
+  a {
+    @apply transition-colors;
+    transition-duration: var(--transition-fast);
+  }
+
+  /* Global focus ring — consistent across all interactive elements */
+  :focus-visible {
+    @apply outline-none ring-2 ring-gold-400 ring-offset-2;
+  }
+
+  /* Text selection */
+  ::selection {
+    background-color: rgba(212, 168, 75, 0.25);
+    color: #0F1B2D;
+  }
+
+  /* Scrollbar utility */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* ── Animation Keyframes ─────────────────────────────────────────────── */
+@layer base {
+  @keyframes scroll-left {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fade-in-zoom {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
+}
+
+/* ── Component Layer ─────────────────────────────────────────────────── */
+@layer components {
+
+  /* ─── Layout ──────────────────────────────────────────────────────── */
+  /* Centralized page container — use instead of repeating max-w-7xl mx-auto px-... */
+  .container-main {
+    @apply max-w-7xl mx-auto px-margin-mobile md:px-margin-desktop;
+  }
+
+  /* Full-bleed section wrapper (for dark/colored backgrounds) */
+  .section-full {
+    @apply py-stack-lg;
+  }
+
+  /* Section with container built-in */
+  .section-main {
+    @apply py-stack-lg;
+  }
+  .section-main > .container-main {
+    @apply h-full;
+  }
+
+  /* ─── Typography ─────────────────────────────────────────────────── */
+  /* Section heading with gold underline accent */
+  .section-heading {
+    @apply font-heading text-headline-sm text-navy-900 mb-1;
+  }
+  .section-heading::after {
+    content: '';
+    @apply block w-12 h-0.5 bg-gold-400 rounded-full mt-2;
+  }
+
+  /* Page hero label (small uppercase label above big heading) */
+  .hero-label {
+    @apply text-label-md text-gold-500 uppercase tracking-widest;
+  }
+
+  /* ─── Buttons ────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-gold-500 text-navy-900 font-semibold px-6 py-3 rounded-lg
+           hover:bg-gold-400 active:bg-gold-600
+           transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400;
+    box-shadow: var(--shadow-low);
+    transition-duration: var(--transition-base);
+  }
+  .btn-primary:hover {
+    box-shadow: var(--shadow-gold);
+  }
+
+  .btn-secondary {
+    @apply border-2 border-gold-400 text-gold-600 font-semibold px-6 py-3 rounded-lg
+           hover:bg-gold-50 active:bg-gold-100
+           transition-colors;
+    transition-duration: var(--transition-base);
+  }
+
+  .btn-ghost {
+    @apply text-navy-600 font-medium px-4 py-2 rounded-lg
+           hover:bg-navy-100 active:bg-navy-200
+           transition-colors;
+    transition-duration: var(--transition-fast);
+  }
+
+  /* ─── Cards ──────────────────────────────────────────────────────── */
+  /* Standard surface card */
+  .card-surface {
+    @apply bg-white border rounded-lg;
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-low);
+  }
+
+  /* Hoverable product card */
+  .card-product {
+    @apply card-surface hover:-translate-y-1 transition-all;
+    transition-duration: var(--transition-slow);
+  }
+  .card-product:hover {
+    box-shadow: var(--shadow-mid);
+  }
+
+  /* Dark/navy card (for dark-bg sections) */
+  .card-dark {
+    @apply bg-white/5 border border-gold-400/20 rounded-xl backdrop-blur-sm
+           hover:bg-gold-400/10 transition-colors;
+    transition-duration: var(--transition-base);
+  }
+
+  /* ─── Form Elements ──────────────────────────────────────────────── */
+  /* Base input reset — extend via component props */
+  .input-base {
+    @apply w-full bg-white border border-navy-300 rounded-xl
+           text-navy-900 placeholder:text-navy-300
+           px-4 py-3 text-sm
+           focus:outline-none focus:ring-2 focus:ring-gold-400 focus:border-gold-400
+           disabled:bg-navy-100 disabled:cursor-not-allowed
+           transition-all;
+    transition-duration: var(--transition-fast);
+  }
+
+  /* ─── Badges ─────────────────────────────────────────────────────── */
+  .badge-base    { @apply inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full border; }
+  .badge-pending   { @apply badge-base bg-yellow-50 text-yellow-700 border-yellow-300; }
+  .badge-paid      { @apply badge-base bg-green-50 text-green-700 border-green-300; }
+  .badge-processing{ @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
+  .badge-shipped   { @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
+  .badge-delivered { @apply badge-base bg-emerald-50 text-emerald-700 border-emerald-300; }
+  .badge-cancelled { @apply badge-base bg-red-50 text-red-700 border-red-300; }
+
+  /* ANTAM certified stamp */
+  .certified-stamp {
+    @apply inline-flex items-center gap-1 bg-navy-900 text-gold-400
+           text-[8px] font-bold uppercase tracking-wider
+           px-2 py-0.5 rounded;
+  }
+
+  /* ─── Animations (utility classes) ──────────────────────────────── */
+  .animate-in           { animation: fade-in-zoom var(--transition-base) ease-out forwards; }
+  .animate-fade-in      { animation: fade-in      var(--transition-base) ease-out forwards; }
+  .animate-fade-in-up   { animation: fade-in-up   var(--transition-slow) ease-out forwards; }
+  .animate-scroll-left  { animation: scroll-left 20s linear infinite; }
+
+  /* ─── Misc ───────────────────────────────────────────────────────── */
+  /* Gold live ticker pill */
+  .gold-ticker-pill {
+    @apply inline-flex items-center gap-1.5 bg-navy-900 border border-gold-400/30
+           px-3 py-1.5 rounded-lg;
+  }
+
+  /* Product image wrapper */
+  .product-img-wrap {
+    @apply aspect-square flex items-center justify-center
+           bg-navy-100 rounded-lg overflow-hidden;
+  }
+
+  /* Gradient tonal overlay (bottom elevation) */
+  .tonal-layer-elevation {
+    background: linear-gradient(to top, rgba(15, 27, 45, 0.05), transparent);
+  }
+}
+
+/* ── Utilities ───────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  /* Anchor-smooth scroll offset (for fixed navbar) */
+  .scroll-mt-navbar { scroll-margin-top: 4.5rem; }
+}

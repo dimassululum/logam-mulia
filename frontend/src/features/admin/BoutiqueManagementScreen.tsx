@@ -1,0 +1,379 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { ExternalLink, MapPinned } from 'lucide-react'
+import {
+  adminBoutiqueRecords,
+  type AdminBoutiqueRecord,
+  type CatalogStatus,
+} from '@/features/admin/admin-management-data'
+import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admin/admin-management-shared'
+import {
+  FilterModal,
+  FilterToggleButton,
+  IconActionButton,
+  InlineToast,
+  SortableColumnHeader,
+  TableToolbar,
+  type SortDirection,
+  type ToastTone,
+} from '@/features/admin/admin-ui'
+import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
+import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Card, Input, Modal } from '@/shared/ui'
+
+type BoutiqueSortKey = 'city'
+
+const EMPTY_FORM = {
+  id: '',
+  name: '',
+  city: '',
+  address: '',
+  contactPhone: '',
+  googleMapsUrl: '',
+  status: 'active' as CatalogStatus,
+}
+
+export default function BoutiqueManagementScreen() {
+  const [boutiques, setBoutiques] = useState(adminBoutiqueRecords)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [sortKey, setSortKey] = useState<BoutiqueSortKey>('city')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [formState, setFormState] = useState(EMPTY_FORM)
+  const [detailTarget, setDetailTarget] = useState<AdminBoutiqueRecord | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<AdminBoutiqueRecord | null>(null)
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timeout = window.setTimeout(() => setToast(null), 2200)
+    return () => window.clearTimeout(timeout)
+  }, [toast])
+
+  const hasActiveFilter = statusFilter !== 'all'
+
+  const filteredBoutiques = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
+    const base = boutiques.filter((boutique) => {
+      const matchesSearch =
+        !keyword ||
+        boutique.name.toLowerCase().includes(keyword) ||
+        boutique.city.toLowerCase().includes(keyword) ||
+        boutique.address.toLowerCase().includes(keyword) ||
+        boutique.contactPhone.toLowerCase().includes(keyword)
+
+      const matchesStatus = statusFilter === 'all' || boutique.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+
+    return [...base].sort((left, right) => {
+      const direction = sortDirection === 'asc' ? 1 : -1
+      return left[sortKey].localeCompare(right[sortKey]) * direction
+    })
+  }, [boutiques, search, statusFilter, sortKey, sortDirection])
+
+  function showToast(message: string, tone: ToastTone) {
+    setToast({ message, tone })
+  }
+
+  function openCreateModal() {
+    setFormState(EMPTY_FORM)
+    setIsFormOpen(true)
+  }
+
+  function openEditModal(boutique: AdminBoutiqueRecord) {
+    setFormState({
+      id: boutique.id,
+      name: boutique.name,
+      city: boutique.city,
+      address: boutique.address,
+      contactPhone: boutique.contactPhone,
+      googleMapsUrl: boutique.googleMapsUrl,
+      status: boutique.status,
+    })
+    setIsFormOpen(true)
+  }
+
+  function saveBoutique() {
+    if (
+      !formState.name.trim() ||
+      !formState.city.trim() ||
+      !formState.address.trim() ||
+      !formState.contactPhone.trim() ||
+      !formState.googleMapsUrl.trim()
+    ) {
+      showToast('Nama butik, kota, alamat, kontak, dan link Google Maps wajib diisi.', 'error')
+      return
+    }
+
+    const existing = boutiques.find((boutique) => boutique.id === formState.id)
+    const nextBoutique: AdminBoutiqueRecord = {
+      id: formState.id || `BTQ-${String(boutiques.length + 1).padStart(3, '0')}`,
+      name: formState.name.trim(),
+      city: formState.city.trim(),
+      address: formState.address.trim(),
+      contactPhone: formState.contactPhone.trim(),
+      googleMapsUrl: formState.googleMapsUrl.trim(),
+      status: formState.status,
+      updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+    }
+
+    setBoutiques((current) => {
+      const exists = current.some((boutique) => boutique.id === nextBoutique.id)
+      if (!exists) return [nextBoutique, ...current]
+      return current.map((boutique) => (boutique.id === nextBoutique.id ? nextBoutique : boutique))
+    })
+    setIsFormOpen(false)
+    showToast('Butik berhasil disimpan.', 'success')
+  }
+
+  function deleteBoutique() {
+    if (!deleteTarget) return
+    setBoutiques((current) => current.filter((boutique) => boutique.id !== deleteTarget.id))
+    setDeleteTarget(null)
+    showToast('Butik berhasil dihapus.', 'success')
+  }
+
+  const columns: AdminTableColumn[] = [
+    {
+      id: 'boutique',
+      label: (
+        <SortableColumnHeader
+          label="Butik"
+          active={sortKey === 'city'}
+          direction={sortDirection}
+          onClick={() => {
+            setSortKey('city')
+            setSortDirection((current) => (sortKey === 'city' && current === 'asc' ? 'desc' : 'asc'))
+          }}
+        />
+      ),
+      className: 'w-[28%]',
+    },
+    { id: 'address', label: 'Alamat', className: 'w-[34%]' },
+    { id: 'contact', label: 'Kontak', className: 'w-[16%]' },
+    { id: 'maps', label: 'Google Maps', className: 'w-[10%]' },
+    { id: 'status', label: 'Status', className: 'w-[6%]' },
+    { id: 'actions', label: 'Aksi', className: 'w-[6%]' },
+  ]
+
+  const rows: AdminTableRow[] = filteredBoutiques.map((boutique) => ({
+    id: boutique.id,
+    cells: [
+      <div key={`${boutique.id}-name`}>
+        <p className="text-sm font-semibold text-navy-900">{boutique.name}</p>
+        <p className="mt-1 text-sm text-navy-500">{boutique.city}</p>
+      </div>,
+      <p key={`${boutique.id}-address`} className="max-w-md text-sm text-navy-600">{boutique.address}</p>,
+      <p key={`${boutique.id}-contact`} className="text-sm text-navy-700">{boutique.contactPhone}</p>,
+      <a
+        key={`${boutique.id}-maps`}
+        href={boutique.googleMapsUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 text-sm font-medium text-gold-700 hover:text-gold-600"
+      >
+        Buka
+        <ExternalLink className="h-4 w-4" />
+      </a>,
+      <Badge key={`${boutique.id}-status`} variant={boutique.status} />,
+      <div key={`${boutique.id}-actions`} className="flex items-center gap-2">
+        <IconActionButton label={`Detail ${boutique.name}`} tone="detail" onClick={() => setDetailTarget(boutique)} />
+        <IconActionButton label={`Edit ${boutique.name}`} tone="edit" onClick={() => openEditModal(boutique)} />
+        <IconActionButton label={`Hapus ${boutique.name}`} tone="delete" onClick={() => setDeleteTarget(boutique)} />
+      </div>,
+    ],
+    mobileTitle: boutique.name,
+    mobileSubtitle: boutique.address,
+    mobileAside: <Badge variant={boutique.status} />,
+    mobileMeta: (
+      <div className="space-y-3">
+        <div className="flex items-start gap-2 text-sm text-navy-700">
+          <MapPinned className="mt-0.5 h-4 w-4 shrink-0 text-navy-400" />
+          <div>
+            <p className="font-medium text-navy-900">{boutique.city}</p>
+            <p className="mt-1 text-navy-500">{boutique.contactPhone}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <a
+            href={boutique.googleMapsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-sm font-medium text-gold-700 hover:text-gold-600"
+          >
+            Buka Maps
+            <ExternalLink className="h-4 w-4" />
+          </a>
+          <div className="flex items-center gap-2">
+            <IconActionButton label={`Detail ${boutique.name}`} tone="detail" onClick={() => setDetailTarget(boutique)} />
+            <IconActionButton label={`Edit ${boutique.name}`} tone="edit" onClick={() => openEditModal(boutique)} />
+            <IconActionButton label={`Hapus ${boutique.name}`} tone="delete" onClick={() => setDeleteTarget(boutique)} />
+          </div>
+        </div>
+      </div>
+    ),
+  }))
+
+  return (
+    <div className="space-y-4">
+      <AdminPageHeader title="Butik" />
+
+      <InlineToast toast={toast} />
+
+      <div className="space-y-4">
+        <TableToolbar>
+          <div className="w-full min-w-[220px] lg:w-72">
+            <FilterInput label="Cari butik" value={search} onChange={setSearch} placeholder="Cari nama butik, kota, alamat" />
+          </div>
+          <FilterToggleButton active={hasActiveFilter} onClick={() => setIsFilterOpen(true)} />
+          {hasActiveFilter && (
+            <Button variant="ghost" className="h-11" onClick={() => setStatusFilter('all')}>
+              Reset
+            </Button>
+          )}
+          <Button className="h-11" onClick={openCreateModal}>Tambah</Button>
+        </TableToolbar>
+
+        <AdminTable
+          columns={columns}
+          rows={rows}
+          emptyState={<AdminEmptyState title="Butik tidak ditemukan" description="Ubah pencarian atau filter." />}
+        />
+      </div>
+
+      <FilterModal isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Filter Butik">
+        <FilterSelect
+          label="Status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: 'all', label: 'Semua status' },
+            { value: 'active', label: 'Aktif' },
+            { value: 'inactive', label: 'Nonaktif' },
+          ]}
+        />
+      </FilterModal>
+
+      <Modal
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={formState.id ? 'Edit Butik' : 'Tambah Butik'}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              id="boutique-name"
+              label="Nama butik"
+              value={formState.name}
+              onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
+            />
+            <Input
+              id="boutique-city"
+              label="Kota"
+              value={formState.city}
+              onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
+            />
+          </div>
+
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
+            Alamat
+            <textarea
+              value={formState.address}
+              onChange={(event) => setFormState((current) => ({ ...current, address: event.target.value }))}
+              rows={4}
+              className="w-full rounded-2xl border border-navy-200 bg-white px-4 py-3 text-sm text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-400/30"
+            />
+          </label>
+
+          <Input
+            id="boutique-contact-phone"
+            label="Nomor kontak"
+            value={formState.contactPhone}
+            onChange={(event) => setFormState((current) => ({ ...current, contactPhone: event.target.value }))}
+          />
+
+          <Input
+            id="boutique-maps-url"
+            label="Link Google Maps"
+            value={formState.googleMapsUrl}
+            onChange={(event) => setFormState((current) => ({ ...current, googleMapsUrl: event.target.value }))}
+          />
+
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
+            Status
+            <select
+              value={formState.status}
+              onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CatalogStatus }))}
+              className={adminSelectClassName}
+            >
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+            </select>
+          </label>
+
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Batal</Button>
+            <Button onClick={saveBoutique}>Simpan</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={detailTarget !== null} onClose={() => setDetailTarget(null)} title="Detail Butik" size="md">
+        <div className="space-y-3 text-sm text-navy-700">
+          <div>
+            <p className="text-xs text-navy-500">Nama butik</p>
+            <p className="font-medium text-navy-900">{detailTarget?.name}</p>
+          </div>
+          <div>
+            <p className="text-xs text-navy-500">Kota</p>
+            <p>{detailTarget?.city}</p>
+          </div>
+          <div>
+            <p className="text-xs text-navy-500">Alamat</p>
+            <p>{detailTarget?.address}</p>
+          </div>
+          <div>
+            <p className="text-xs text-navy-500">Kontak</p>
+            <p>{detailTarget?.contactPhone}</p>
+          </div>
+          <div>
+            <p className="text-xs text-navy-500">Google Maps</p>
+            {detailTarget?.googleMapsUrl ? (
+              <a
+                href={detailTarget.googleMapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-gold-700 hover:text-gold-600"
+              >
+                Buka link
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            ) : (
+              <p>-</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-navy-500">Status</p>
+            {detailTarget && <Badge variant={detailTarget.status} />}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Hapus Butik" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-navy-600">
+            Butik <span className="font-semibold text-navy-900">{deleteTarget?.name}</span> akan dihapus dari daftar.
+          </p>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Batal</Button>
+            <Button variant="danger" onClick={deleteBoutique}>Hapus</Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
