@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --frozen-lockfile
+RUN npm install --legacy-peer-deps
 
 COPY . .
 
@@ -23,13 +23,16 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+COPY package*.json ./
+RUN npm install --legacy-peer-deps --omit=dev
 
-EXPOSE 3000
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.mjs ./
+
+EXPOSE 4000
 
 USER node
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "server.js"]
+CMD ["npx", "next", "start", "-p", "4000"]
