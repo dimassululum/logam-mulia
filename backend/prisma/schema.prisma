@@ -49,9 +49,12 @@ model User {
   role          Role      @default(CUSTOMER)
   ktpUrl        String?   @map("ktp_url")      // Path file KTP terenkripsi (private storage)
   isKycVerified Boolean   @default(false) @map("is_kyc_verified")
+  isActive      Boolean   @default(true) @map("is_active")
   addresses     Address[]
+  cartItems     CartItem[]
   orders        Order[]
   reviews       Review[]
+  contents      Content[] @relation("ContentAuthor")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -78,6 +81,10 @@ model Category {
   slug        String    @unique
   description String?
   imageUrl    String?   @map("image_url")
+  isActive    Boolean   @default(true) @map("is_active")
+  parentId    String?   @map("parent_id")
+  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
   products    Product[]
   promos      Promo[]
 
@@ -95,24 +102,29 @@ model Product {
   weightGram  Decimal        @map("weight_gram") @db.Decimal(10, 3)
   kadar       String         // "24K", "22K", "18K", dll
   stock       Int            @default(0)
-  isActive    Boolean        @default(true) @map("is_active")
-  images      ProductImage[]
-  orderItems  OrderItem[]
-  reviews     Review[]
-  promos      Promo[]
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
+  isActive      Boolean        @default(true) @map("is_active")
+  averageRating Decimal        @default(0) @map("average_rating") @db.Decimal(3, 2)
+  reviewCount   Int            @default(0) @map("review_count")
+  images        ProductImage[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  reviews       Review[]
+  promos        Promo[]
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
 
   @@map("products")
 }
 
 model ProductImage {
-  id        String  @id @default(uuid())
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  imageUrl  String  @map("image_url")
-  isPrimary Boolean @default(false) @map("is_primary")
-  sortOrder Int     @default(0) @map("sort_order")
+  id        String    @id @default(uuid())
+  productId String    @map("product_id")
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  imageUrl  String    @map("image_url")
+  altText   String?   @map("alt_text")
+  isPrimary Boolean   @default(false) @map("is_primary")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("product_images")
 }
@@ -139,6 +151,20 @@ model Order {
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
   @@map("orders")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, productId])
+  @@map("cart_items")
 }
 
 model OrderItem {
@@ -207,4 +233,40 @@ model Setting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+model Banner {
+  id        String   @id @default(uuid())
+  title     String
+  subtitle  String?
+  imageUrl  String   @map("image_url")
+  linkUrl   String?  @map("link_url")
+  isActive  Boolean  @default(true) @map("is_active")
+  position  String   @default("home") // home, category, product
+  sortOrder Int      @default(0) @map("sort_order")
+  startsAt  DateTime? @map("starts_at")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("banners")
+}
+
+model Content {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  title     String
+  content   String   // HTML content
+  excerpt   String?  // Short description
+  type      String   @default("page") // page, post, announcement
+  status    String   @default("published") // published, draft, archived
+  imageUrl  String?  @map("image_url")
+  authorId  String   @map("author_id")
+  author    User     @relation("ContentAuthor", fields: [authorId], references: [id])
+  seoTitle String?  @map("seo_title")
+  seoDesc   String?  @map("seo_desc")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("contents")
 }

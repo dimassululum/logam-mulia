@@ -4,17 +4,40 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import {
-  adminArticleRecords,
   formatAdminDateShort,
   type AdminArticleRecord,
 } from '@/features/admin/admin-management-data'
+import { contentsApi } from '@/core/lib/api'
 import { FilterInput, FilterSelect } from '@/features/admin/admin-management-shared'
 import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Modal } from '@/shared/ui'
 
+function mapApiArticle(c: any): AdminArticleRecord {
+  return {
+    id:           c.id,
+    slug:         c.slug,
+    title:        c.title,
+    thumbnailUrl: c.imageUrl ?? '',
+    contentHtml:  c.content ?? '',
+    publishedAt:  c.createdAt,
+    status:       c.status === 'published' ? 'active' : 'inactive',
+  }
+}
+
 export default function ArticleManagementScreen() {
-  const [articles, setArticles] = useState(adminArticleRecords)
+  const [articles,  setArticles]  = useState<AdminArticleRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    contentsApi.list({ limit: 100 })
+      .then(({ data }) => {
+        const raw = data.contents ?? data.data ?? []
+        setArticles(raw.map(mapApiArticle))
+      })
+      .catch(() => setArticles([]))
+      .finally(() => setIsLoading(false))
+  }, [])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)

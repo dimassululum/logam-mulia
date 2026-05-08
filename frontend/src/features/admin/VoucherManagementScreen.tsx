@@ -4,11 +4,11 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import {
-  adminVoucherRecords,
   formatDateRange,
   type AdminVoucherRecord,
   type VoucherStatus,
 } from '@/features/admin/admin-management-data'
+import { vouchersApi } from '@/core/lib/api'
 import { FilterInput, FilterSelect } from '@/features/admin/admin-management-shared'
 import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
@@ -18,8 +18,44 @@ function formatBenefit(voucher: AdminVoucherRecord) {
   return voucher.discountType === 'percentage' ? `${voucher.title} • ${voucher.amount}%` : `${voucher.title} • Rp${voucher.amount.toLocaleString('id-ID')}`
 }
 
+function getVoucherStatus(v: any): VoucherStatus {
+  if (!v.isActive) return 'inactive'
+  if (v.expiresAt && new Date(v.expiresAt) < new Date()) return 'expired'
+  return 'active'
+}
+
+function mapApiVoucher(v: any): AdminVoucherRecord {
+  return {
+    id:               v.id,
+    code:             v.code,
+    title:            v.code,
+    discountType:     v.discountType?.toLowerCase() === 'percentage' ? 'percentage' : 'fixed',
+    amount:           Number(v.discountValue),
+    minPurchase:      Number(v.minPurchase),
+    maxDiscount:      v.maxDiscount ? Number(v.maxDiscount) : null,
+    usageLimit:       v.usageLimit ?? 0,
+    usageCount:       v.usageCount ?? 0,
+    perCustomerLimit: v.perUserLimit ?? 1,
+    applyTo:          'all',
+    startDate:        v.startsAt  ?? v.createdAt,
+    endDate:          v.expiresAt ?? '',
+    status:           getVoucherStatus(v),
+  }
+}
+
 export default function VoucherManagementScreen() {
-  const [vouchers, setVouchers] = useState(adminVoucherRecords)
+  const [vouchers,  setVouchers]  = useState<AdminVoucherRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    vouchersApi.list({ limit: 100 })
+      .then(({ data }) => {
+        const raw = data.vouchers ?? data.data ?? []
+        setVouchers(raw.map(mapApiVoucher))
+      })
+      .catch(() => setVouchers([]))
+      .finally(() => setIsLoading(false))
+  }, [])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)

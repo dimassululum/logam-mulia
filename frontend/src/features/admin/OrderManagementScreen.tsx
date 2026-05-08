@@ -6,10 +6,10 @@ import { ArrowUpRight } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
 import {
-  adminOrderRecords,
   getOrderBadgeVariant,
   type AdminOrderRecord,
 } from '@/features/admin/admin-management-data'
+import { adminApi } from '@/core/lib/api'
 import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admin/admin-management-shared'
 import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
@@ -30,8 +30,42 @@ function getStatusLabel(status: OrderStatus) {
   return ORDER_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 }
 
+function mapApiOrder(o: any): AdminOrderRecord {
+  const firstItem = o.items?.[0]
+  let addr = '-'
+  try { addr = typeof o.shippingAddress === 'string' ? JSON.parse(o.shippingAddress)?.address ?? o.shippingCity ?? '-' : o.shippingCity ?? '-' } catch { addr = o.shippingCity ?? '-' }
+  return {
+    id:             o.id,
+    customerName:   o.user?.name  ?? '-',
+    customerEmail:  o.user?.email ?? '-',
+    customerPhone:  o.user?.phone ?? '-',
+    primaryItem:    firstItem?.product?.name ?? '-',
+    itemCount:      o.items?.length ?? 0,
+    totalAmount:    Number(o.grandTotal),
+    paymentMethod:  o.paymentMethod ?? 'transfer',
+    shippingMethod: o.shippingCourier ?? '-',
+    trackingNumber: o.trackingNumber  ?? '',
+    requiresKtp:    false,
+    address:        addr,
+    status:         o.status.toLowerCase() as any,
+    createdAt:      o.createdAt,
+    updatedAt:      o.updatedAt,
+  }
+}
+
 export default function OrderManagementScreen() {
-  const [orders, setOrders] = useState(adminOrderRecords)
+  const [orders,  setOrders]  = useState<AdminOrderRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    adminApi.getOrders({ limit: 100 })
+      .then(({ data }) => {
+        const raw = data.orders ?? data.data ?? []
+        setOrders(raw.map(mapApiOrder))
+      })
+      .catch(() => setOrders([]))
+      .finally(() => setIsLoading(false))
+  }, [])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [shippingFilter, setShippingFilter] = useState('all')
@@ -83,26 +117,35 @@ export default function OrderManagementScreen() {
     setShippingFilter('all')
   }
 
-  function applyStatusUpdate() {
+  async function applyStatusUpdate() {
     if (!activeOrder) return
     if (nextStatus === 'shipped' && !trackingNumber.trim()) {
       showToast('Nomor resi wajib diisi.', 'error')
       return
     }
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === activeOrder.id
-          ? {
-              ...order,
-              status: nextStatus,
-              trackingNumber: nextStatus === 'shipped' ? trackingNumber.trim() : order.trackingNumber,
-              updatedAt: new Date().toISOString(),
-            }
-          : order,
-      ),
-    )
-    setActiveOrder(null)
-    showToast('Status pesanan berhasil diperbarui.', 'success')
+    try {
+      await adminApi.updateOrderStatus(
+        activeOrder.id,
+        nextStatus.toUpperCase(),
+        nextStatus === 'shipped' ? trackingNumber.trim() : undefined,
+      )
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === activeOrder.id
+            ? {
+                ...order,
+                status: nextStatus,
+                trackingNumber: nextStatus === 'shipped' ? trackingNumber.trim() : order.trackingNumber,
+                updatedAt: new Date().toISOString(),
+              }
+            : order,
+        ),
+      )
+      setActiveOrder(null)
+      showToast('Status pesanan berhasil diperbarui.', 'success')
+    } catch {
+      showToast('Gagal memperbarui status.', 'error')
+    }
   }
 
   const columns: AdminTableColumn[] = [

@@ -5,10 +5,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, PackagePlus, Pencil, XCircle } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import {
-  adminProductRecords,
   productCategoryOptions,
   type AdminProductRecord,
 } from '@/features/admin/admin-management-data'
+import { productsApi } from '@/core/lib/api'
 import { FilterInput, FilterSelect } from '@/features/admin/admin-management-shared'
 import {
   FilterModal,
@@ -70,8 +70,35 @@ function getStockTone(stock: number) {
   return 'text-navy-900'
 }
 
+function mapApiProduct(p: any): AdminProductRecord {
+  return {
+    id:         p.id,
+    sku:        p.slug ?? p.id,
+    name:       p.name,
+    category:   p.category?.name ?? '-',
+    weightGram: Number(p.weightGram) || 0,
+    purity:     p.kadar ?? '-',
+    price:      Number(p.price),
+    stock:      p.stock,
+    status:     p.isActive ? 'active' : 'inactive',
+    updatedAt:  p.updatedAt,
+    accent:     p.category?.slug ?? 'batangan',
+  }
+}
+
 export default function ProductManagementScreen() {
-  const [products, setProducts] = useState(adminProductRecords)
+  const [products,  setProducts]  = useState<AdminProductRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    productsApi.list({ limit: 200 })
+      .then(({ data }) => {
+        const raw = data.products ?? data.data ?? []
+        setProducts(raw.map(mapApiProduct))
+      })
+      .catch(() => setProducts([]))
+      .finally(() => setIsLoading(false))
+  }, [])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')

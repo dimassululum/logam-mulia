@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { LogOut, Menu } from 'lucide-react'
 import type { CurrentUser } from '@/core/types'
-import { MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { useAuthStore } from '@/core/store/auth.store'
 
 interface AdminTopbarProps {
   currentUser: CurrentUser
@@ -15,7 +15,8 @@ export default function AdminTopbar({
   currentUser,
   onMenuClick,
 }: AdminTopbarProps) {
-  const router = useRouter()
+  const router      = useRouter()
+  const { logout }  = useAuthStore()
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement | null>(null)
 
@@ -30,11 +31,9 @@ export default function AdminTopbar({
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [])
 
-  function handleLogout() {
-    document.cookie = `${MOCK_AUTH_COOKIES.role}=; path=/; max-age=0; SameSite=Lax`
-    document.cookie = `${MOCK_AUTH_COOKIES.name}=; path=/; max-age=0; SameSite=Lax`
-    document.cookie = `${MOCK_AUTH_COOKIES.email}=; path=/; max-age=0; SameSite=Lax`
+  async function handleLogout() {
     setProfileOpen(false)
+    await logout()
     router.push('/login')
     router.refresh()
   }

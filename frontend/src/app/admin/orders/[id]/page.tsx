@@ -1,15 +1,5 @@
-import { notFound } from 'next/navigation'
-import {
-  getAdminOrderDetailRecord,
-} from '@/features/admin/admin-management-data'
-import OrderDetailScreen from '@/features/admin/OrderDetailScreen'
+import OrderDetailLoader from '@/features/admin/OrderDetailLoader'
 
 export default function AdminOrderDetailPage({ params }: { params: { id: string } }) {
-  const order = getAdminOrderDetailRecord(params.id)
-
-  if (!order) {
-    notFound()
-  }
-
-  return <OrderDetailScreen initialOrder={order} />
+  return <OrderDetailLoader orderId={params.id} />
 }

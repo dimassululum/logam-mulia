@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  adminCategoryRecords,
   type AdminCategoryRecord,
   type CatalogStatus,
 } from '@/features/admin/admin-management-data'
+import { categoriesApi } from '@/core/lib/api'
 import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admin/admin-management-shared'
 import {
   FilterModal,
@@ -33,8 +33,32 @@ function slugify(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')
 }
 
+function mapApiCategory(c: any): AdminCategoryRecord {
+  return {
+    id:           c.id,
+    name:         c.name,
+    slug:         c.slug,
+    description:  c.description ?? '',
+    imageHint:    c.imageUrl ?? '',
+    productCount: c._count?.products ?? 0,
+    status:       c.isActive ? 'active' : 'inactive',
+    updatedAt:    c.updatedAt ?? new Date().toISOString(),
+  }
+}
+
 export default function CategoryManagementScreen() {
-  const [categories, setCategories] = useState(adminCategoryRecords)
+  const [categories, setCategories] = useState<AdminCategoryRecord[]>([])
+  const [isLoading, setIsLoading]   = useState(true)
+
+  useEffect(() => {
+    categoriesApi.list()
+      .then(({ data }) => {
+        const raw = data.categories ?? data.data ?? []
+        setCategories(raw.map(mapApiCategory))
+      })
+      .catch(() => setCategories([]))
+      .finally(() => setIsLoading(false))
+  }, [])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)

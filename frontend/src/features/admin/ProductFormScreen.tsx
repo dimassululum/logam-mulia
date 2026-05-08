@@ -1,14 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, ImagePlus, Save } from 'lucide-react'
 import {
-  adminProductRecords,
   productCategoryOptions,
   type AdminProductRecord,
   type CatalogStatus,
 } from '@/features/admin/admin-management-data'
+import { productsApi } from '@/core/lib/api'
 import { adminSelectClassName, ManagementSection } from '@/features/admin/admin-management-shared'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Button, Card, Input } from '@/shared/ui'
@@ -42,11 +42,30 @@ function buildInitialState(product?: AdminProductRecord): ProductFormState {
 }
 
 export default function ProductFormScreen({ productId }: ProductFormScreenProps) {
-  const product = useMemo(
-    () => adminProductRecords.find((item) => item.id === productId),
-    [productId],
-  )
-  const [formState, setFormState] = useState<ProductFormState>(buildInitialState(product))
+  const [product,   setProduct]   = useState<AdminProductRecord | undefined>(undefined)
+  const [formState, setFormState] = useState<ProductFormState>(buildInitialState(undefined))
+
+  useEffect(() => {
+    if (!productId) return
+    productsApi.getById(productId).then(({ data }) => {
+      const p = data.product ?? data
+      const mapped: AdminProductRecord = {
+        id:         p.id,
+        sku:        p.slug ?? p.id,
+        name:       p.name,
+        category:   p.category?.name ?? productCategoryOptions[0],
+        weightGram: Number(p.weightGram) || 0,
+        purity:     p.kadar ?? '99.99%',
+        price:      Number(p.price),
+        stock:      p.stock,
+        status:     p.isActive ? 'active' : 'inactive',
+        updatedAt:  p.updatedAt,
+        accent:     '',
+      }
+      setProduct(mapped)
+      setFormState(buildInitialState(mapped))
+    }).catch(() => {})
+  }, [productId])
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
 
   useEffect(() => {

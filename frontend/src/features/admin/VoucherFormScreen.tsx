@@ -5,14 +5,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, Pencil, Plus, Save, TicketPercent } from 'lucide-react'
 import { cn, formatRupiah } from '@/core/lib/utils'
 import {
-  adminProductRecords,
-  adminVoucherRecords,
   formatDateRange,
   type AdminProductRecord,
   type AdminVoucherRecord,
   type DiscountType,
   type VoucherStatus,
 } from '@/features/admin/admin-management-data'
+import { vouchersApi, productsApi } from '@/core/lib/api'
 import { SelectField } from '@/features/admin/company-profile-shared'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Badge, Button, Card, Input, Modal } from '@/shared/ui'
@@ -95,11 +94,41 @@ function SectionCard({
 }
 
 export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreenProps) {
-  const voucher = useMemo(
-    () => (voucherId ? adminVoucherRecords.find((item) => item.id === voucherId) : undefined),
-    [voucherId],
-  )
-  const [formState, setFormState] = useState<VoucherFormState>(buildInitialState(voucher))
+  const [formState,    setFormState]    = useState<VoucherFormState>(buildInitialState(undefined))
+  const [allProducts,  setAllProducts]  = useState<AdminProductRecord[]>([])
+
+  useEffect(() => {
+    // Load available products for the product picker
+    productsApi.list({ limit: 200 }).then(({ data }) => {
+      const raw = data.products ?? data.data ?? []
+      setAllProducts(raw.map((p: any) => ({
+        id: p.id, sku: p.slug ?? p.id, name: p.name,
+        category: p.category?.name ?? '-', weightGram: Number(p.weightGram) || 0,
+        purity: p.kadar ?? '-', price: Number(p.price), stock: p.stock,
+        status: p.isActive ? 'active' : 'inactive', updatedAt: p.updatedAt, accent: '',
+      })))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!voucherId) return
+    vouchersApi.list({ limit: 1 }).then(({ data }) => {
+      const raw = data.vouchers ?? data.data ?? []
+      const v = raw.find((x: any) => x.id === voucherId)
+      if (!v) return
+      const mapped: AdminVoucherRecord = {
+        id: v.id, code: v.code, title: v.code,
+        discountType: v.discountType?.toLowerCase() === 'percentage' ? 'percentage' : 'fixed',
+        amount: Number(v.discountValue), minPurchase: Number(v.minPurchase ?? 0),
+        maxDiscount: v.maxDiscount ? Number(v.maxDiscount) : null,
+        usageLimit: v.usageLimit ?? 0, usageCount: v.usageCount ?? 0,
+        perCustomerLimit: v.perUserLimit ?? 1, applyTo: 'all',
+        startDate: v.startsAt ?? v.createdAt, endDate: v.expiresAt ?? '',
+        status: v.isActive ? 'active' : 'inactive',
+      }
+      setFormState(buildInitialState(mapped))
+    }).catch(() => {})
+  }, [voucherId])
   const [isProductModalOpen, setIsProductModalOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
 
@@ -109,16 +138,12 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
     return () => window.clearTimeout(timeout)
   }, [toast])
 
-  useEffect(() => {
-    setFormState(buildInitialState(voucher))
-  }, [voucher])
-
   const isReadOnly = mode === 'detail'
-  const canEditExisting = voucher ? voucher.status !== 'active' : true
+  const canEditExisting = true
 
   const selectedProducts = useMemo(
-    () => adminProductRecords.filter((product) => formState.selectedProductIds.includes(product.id)),
-    [formState.selectedProductIds],
+    () => allProducts.filter((product) => formState.selectedProductIds.includes(product.id)),
+    [allProducts, formState.selectedProductIds],
   )
 
   function showToast(message: string, tone: ToastTone) {
@@ -181,7 +206,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
       ? 'Tambah Voucher'
       : mode === 'edit'
         ? 'Edit Voucher'
-        : voucher?.code ?? 'Detail Voucher'
+        : 'Detail Voucher'
 
   return (
     <div className="space-y-4">
@@ -195,8 +220,8 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
                 Kembali
               </Button>
             </Link>
-            {mode === 'detail' && voucher && canEditExisting ? (
-              <Link href={`/admin/vouchers/${voucher.id}/edit`}>
+            {mode === 'detail' && voucherId && canEditExisting ? (
+              <Link href={`/admin/vouchers/${voucherId}/edit`}>
                 <Button variant="ghost">
                   <Pencil className="h-4 w-4" />
                   Edit
@@ -393,7 +418,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
       <Modal isOpen={isProductModalOpen} onClose={() => setIsProductModalOpen(false)} title="Pilih Produk" size="lg">
         <div className="space-y-4">
           <div className="space-y-3">
-            {adminProductRecords.map((product: AdminProductRecord) => {
+            {allProducts.map((product: AdminProductRecord) => {
               const checked = formState.selectedProductIds.includes(product.id)
 
               return (

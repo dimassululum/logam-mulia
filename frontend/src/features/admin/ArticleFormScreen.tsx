@@ -1,18 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TextAlign from '@tiptap/extension-text-align'
 import { ArrowLeft, ImagePlus, Save } from 'lucide-react'
 import { cn } from '@/core/lib/utils'
 import {
-  adminArticleRecords,
   formatAdminDateShort,
   type AdminArticleRecord,
   type CatalogStatus,
 } from '@/features/admin/admin-management-data'
+import { contentsApi } from '@/core/lib/api'
 import { SelectField } from '@/features/admin/company-profile-shared'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Badge, Button, Card, Input } from '@/shared/ui'
@@ -28,6 +28,7 @@ interface ArticleFormState {
   title: string
   thumbnailUrl: string
   thumbnailName: string
+  publishedAt?: string
   contentHtml: string
   status: CatalogStatus
 }
@@ -37,6 +38,7 @@ function buildInitialState(article?: AdminArticleRecord): ArticleFormState {
     title: article?.title ?? '',
     thumbnailUrl: article?.thumbnailUrl ?? '',
     thumbnailName: article ? article.thumbnailUrl.split('/').pop() ?? 'thumbnail' : '',
+    publishedAt: article?.publishedAt,
     contentHtml: article?.contentHtml ?? '<p>Tulis isi berita di sini...</p>',
     status: article?.status ?? 'inactive',
   }
@@ -199,11 +201,24 @@ function RichTextEditor({
 }
 
 export default function ArticleFormScreen({ mode, articleId }: ArticleFormScreenProps) {
-  const article = useMemo(
-    () => (articleId ? adminArticleRecords.find((item) => item.id === articleId) : undefined),
-    [articleId],
-  )
-  const [formState, setFormState] = useState<ArticleFormState>(buildInitialState(article))
+  const [formState, setFormState] = useState<ArticleFormState>(buildInitialState(undefined))
+
+  useEffect(() => {
+    if (!articleId) return
+    contentsApi.getById(articleId).then(({ data }) => {
+      const c = data.content ?? data
+      const mapped: AdminArticleRecord = {
+        id:           c.id,
+        slug:         c.slug,
+        title:        c.title,
+        thumbnailUrl: c.imageUrl ?? '',
+        contentHtml:  c.content ?? '',
+        publishedAt:  c.createdAt,
+        status:       c.status === 'published' ? 'active' : 'inactive',
+      }
+      setFormState(buildInitialState(mapped))
+    }).catch(() => {})
+  }, [articleId])
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
 
   useEffect(() => {
@@ -211,10 +226,6 @@ export default function ArticleFormScreen({ mode, articleId }: ArticleFormScreen
     const timeout = window.setTimeout(() => setToast(null), 2200)
     return () => window.clearTimeout(timeout)
   }, [toast])
-
-  useEffect(() => {
-    setFormState(buildInitialState(article))
-  }, [article])
 
   function showToast(message: string, tone: ToastTone) {
     setToast({ message, tone })
@@ -298,7 +309,7 @@ export default function ArticleFormScreen({ mode, articleId }: ArticleFormScreen
               <div className="rounded-2xl border border-navy-100 bg-navy-50 px-4 py-3">
                 <p className="text-sm text-navy-500">Waktu terbit</p>
                 <p className="mt-1 text-sm font-semibold text-navy-900">
-                  {article ? formatAdminDateShort(article.publishedAt) : '-'}
+                  {articleId ? formatAdminDateShort(formState.publishedAt ?? '') : '-'}
                 </p>
               </div>
             </div>

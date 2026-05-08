@@ -3,6 +3,8 @@ import Link from 'next/link'
 import Footer from '@/shared/layout/Footer'
 import Button from '@/shared/ui/Button'
 import BannerSlider from '@/features/home/BannerSlider'
+import HomePopularProducts from '@/features/home/HomePopularProducts'
+import HomeArticles from '@/features/home/HomeArticles'
 import {
   ShieldCheck,
   TrendingUp,
@@ -68,12 +70,6 @@ const articles = [
   },
 ]
 
-const popularProducts = [
-  { id: '1', slug: 'emas-antam-10g', name: 'Emas Antam 10g', price: 'Rp 11.420.000', badge: 'Terlaris', sold: '500+' },
-  { id: '2', slug: 'emas-antam-1g', name: 'Emas Antam 1g', price: 'Rp 1.142.000', badge: 'Stok Terbatas', sold: '1rb+', originalPrice: 'Rp 1.202.000' },
-  { id: '3', slug: 'emas-antam-100g', name: 'Emas Antam 100g', price: 'Rp 114.200.000', badge: '', sold: '100+' },
-  { id: '4', slug: 'gift-series-0-5g', name: 'Gift Series 0.5g', price: 'Rp 650.000', badge: '', sold: '300+' },
-]
 
 function GoldBarIcon({ className }: { className?: string }) {
   return (
@@ -112,46 +108,7 @@ export default function HomePage() {
         <BannerSlider />
       </section>
 
-      <section className="section-full">
-        <div className="container-main">
-          <div className="flex justify-between items-end mb-stack-md">
-            <h2 className="section-heading">Produk Terpopuler</h2>
-            <Link
-              href="/products"
-              className="flex items-center gap-1 text-label-md text-gold-500 font-semibold hover:gap-2 transition-all"
-              style={{ transitionDuration: 'var(--transition-base)' }}
-            >
-              Lihat Semua
-              <ChevronRight className="w-4 h-4" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
-            {popularProducts.map((product) => (
-              <Link
-                key={product.id}
-                href={`/products/${product.slug}`}
-                id={`popular-product-${product.id}`}
-                className="card-product p-4 relative overflow-hidden block"
-              >
-                <div className="product-img-wrap mb-stack-sm">
-                  <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
-                </div>
-
-                <div className="space-y-1">
-                  {product.badge && <span className="certified-stamp">{product.badge}</span>}
-                  <h3 className="font-bold text-sm text-navy-900 truncate">{product.name}</h3>
-                  {product.originalPrice && (
-                    <p className="text-[10px] text-navy-600/50 line-through">{product.originalPrice}</p>
-                  )}
-                  <p className="text-gold-400 font-bold text-sm">{product.price}</p>
-                  <p className="text-[10px] text-navy-600/70 font-medium">Terjual {product.sold}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+      <HomePopularProducts />
 
       <section className="bg-navy-900 section-full">
         <div className="container-main">
@@ -214,44 +171,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="pb-stack-lg overflow-hidden">
-        <div className="container-main">
-          <h2 className="section-heading mb-stack-md">Wawasan Investasi</h2>
-        </div>
-
-        <div className="container-main">
-          <div className="flex gap-gutter overflow-x-auto no-scrollbar snap-x snap-mandatory pb-4">
-            {articles.map((article) => (
-              <article
-                key={article.title}
-                className="min-w-[85%] md:min-w-[30%] snap-center card-surface rounded-2xl overflow-hidden flex flex-col shadow-elevation-mid"
-              >
-                <div className="relative aspect-video bg-gradient-to-br from-navy-900 to-navy-800 flex items-center justify-center">
-                  <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
-                  <div className="absolute top-4 left-4">
-                    <span className="bg-navy-900/80 backdrop-blur-md text-gold-400 text-[8px] font-bold px-2 py-1 rounded uppercase tracking-wider">
-                      {article.tag}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col flex-grow">
-                  <h3 className="text-[17px] font-bold text-navy-900 mb-stack-sm leading-tight">{article.title}</h3>
-                  <p className="text-navy-600 text-xs line-clamp-2 mb-stack-md flex-grow">{article.desc}</p>
-                  <Link
-                    href={`/articles/${article.id}`}
-                    className="flex items-center gap-1 font-bold text-gold-500 text-xs group"
-                    style={{ transition: 'gap var(--transition-base)' }}
-                  >
-                    Baca Selengkapnya
-                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </Link>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      <HomeArticles />
 
       <Footer />
     </>

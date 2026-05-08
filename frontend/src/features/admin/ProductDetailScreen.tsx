@@ -1,15 +1,49 @@
+'use client'
+
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, Pencil } from 'lucide-react'
 import { formatGram, formatRupiah } from '@/core/lib/utils'
-import { adminProductRecords } from '@/features/admin/admin-management-data'
+import { productsApi } from '@/core/lib/api'
 import { AdminPageHeader, Badge, Button, Card } from '@/shared/ui'
+import type { AdminProductRecord } from '@/features/admin/admin-management-data'
 
 export default function ProductDetailScreen({ productId }: { productId: string }) {
-  const product = adminProductRecords.find((item) => item.id === productId)
+  const [product,   setProduct]   = useState<AdminProductRecord | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    productsApi.getById(productId)
+      .then(({ data }) => {
+        const p = data.product ?? data
+        setProduct({
+          id:         p.id,
+          sku:        p.slug ?? p.id,
+          name:       p.name,
+          category:   p.category?.name ?? '-',
+          weightGram: Number(p.weightGram) || 0,
+          purity:     p.kadar ?? '-',
+          price:      Number(p.price),
+          stock:      p.stock,
+          status:     p.isActive ? 'active' : 'inactive',
+          updatedAt:  p.updatedAt,
+          accent:     p.category?.slug ?? 'batangan',
+        })
+      })
+      .catch(() => setProduct(null))
+      .finally(() => setIsLoading(false))
+  }, [productId])
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-24">
+        <div className="w-6 h-6 border-2 border-gold-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   if (!product) {
-    notFound()
+    return <p className="text-center text-navy-500 py-16">Produk tidak ditemukan.</p>
   }
 
   return (
