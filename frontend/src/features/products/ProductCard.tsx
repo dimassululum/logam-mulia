@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { Star } from 'lucide-react'
+import { ShoppingCart, Star } from 'lucide-react'
 import { Product } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
 
@@ -26,8 +26,8 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
   const stats = DUMMY_STATS[product.id] ?? { rating: 4.8, sold: '50+' }
 
   return (
-    <Link href={`/products/${product.slug}`} aria-label={`Lihat detail ${product.name}`}>
-      <article className="group bg-white rounded-2xl border border-navy-100/80 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-navy-100/70 cursor-pointer">
+    <article className="group bg-white rounded-2xl border border-navy-100/80 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-navy-100/70">
+      <Link href={`/products/${product.slug}`} aria-label={`Lihat detail ${product.name}`} className="block">
         {/* Image */}
         <div className="relative aspect-square bg-navy-900 overflow-hidden">
           <Image
@@ -53,7 +53,6 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
           )}
         </div>
 
-        {/* Body */}
         <div className="p-3.5 space-y-1.5">
           {/* Rating & Sold */}
           <div className="flex items-center justify-between w-full pb-1 pt-1">
@@ -83,7 +82,19 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
             </p>
           </div>
         </div>
-      </article>
-    </Link>
+      </Link>
+
+      <div className="px-3.5 pb-3.5">
+        <button
+          type="button"
+          disabled={isOutOfStock}
+          onClick={() => onAddToCart?.(product)}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-navy-900 text-xs font-bold text-gold-400 transition-all hover:bg-navy-800 disabled:cursor-not-allowed disabled:bg-navy-100 disabled:text-navy-400"
+        >
+          <ShoppingCart className="h-4 w-4" />
+          {isOutOfStock ? 'Stok Habis' : 'Keranjang'}
+        </button>
+      </div>
+    </article>
   )
 }

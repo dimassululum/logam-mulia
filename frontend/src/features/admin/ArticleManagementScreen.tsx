@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { apiClient } from '@/core/lib/api-client'
 import {
-  adminArticleRecords,
   formatAdminDateShort,
   type AdminArticleRecord,
 } from '@/features/admin/admin-management-data'
@@ -14,12 +14,40 @@ import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Modal } from '@/shared/ui'
 
 export default function ArticleManagementScreen() {
-  const [articles, setArticles] = useState(adminArticleRecords)
+  const [articles, setArticles] = useState<AdminArticleRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<AdminArticleRecord | null>(null)
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+
+  const fetchArticles = async () => {
+    setIsLoading(true)
+    try {
+      const { data } = await apiClient.get('/articles?limit=100')
+      setArticles(
+        data.data.map((article: any) => ({
+          id: article.id,
+          slug: article.slug,
+          title: article.title,
+          thumbnailUrl: article.coverUrl || '',
+          contentHtml: article.content,
+          publishedAt: article.publishedAt || article.createdAt,
+          status: article.isPublished ? 'active' : 'inactive',
+        })),
+      )
+    } catch (error) {
+      console.error('Error fetching articles', error)
+      showToast('Gagal memuat artikel.', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchArticles()
+  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -46,6 +74,20 @@ export default function ArticleManagementScreen() {
 
   function showToast(message: string, tone: ToastTone) {
     setToast({ message, tone })
+  }
+
+  async function deleteArticle() {
+    if (!deleteTarget) return
+
+    try {
+      await apiClient.delete(`/articles/${deleteTarget.id}`)
+      setArticles((current) => current.filter((article) => article.id !== deleteTarget.id))
+      setDeleteTarget(null)
+      showToast('Artikel berhasil dihapus.', 'success')
+    } catch (error) {
+      console.error('Error deleting article', error)
+      showToast('Gagal menghapus artikel.', 'error')
+    }
   }
 
   const columns: AdminTableColumn[] = [
@@ -113,7 +155,12 @@ export default function ArticleManagementScreen() {
         <AdminTable
           columns={columns}
           rows={rows}
-          emptyState={<AdminEmptyState title="Artikel tidak ditemukan" description="Ubah pencarian atau filter." />}
+          emptyState={
+            <AdminEmptyState
+              title={isLoading ? 'Memuat artikel' : 'Artikel tidak ditemukan'}
+              description={isLoading ? 'Mengambil data dari backend.' : 'Ubah pencarian atau filter.'}
+            />
+          }
         />
       </div>
 
@@ -135,12 +182,7 @@ export default function ArticleManagementScreen() {
           <p className="text-sm text-navy-600">Artikel <span className="font-semibold text-navy-900">{deleteTarget?.title}</span> akan dihapus.</p>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Batal</Button>
-            <Button variant="danger" onClick={() => {
-              if (!deleteTarget) return
-              setArticles((current) => current.filter((article) => article.id !== deleteTarget.id))
-              setDeleteTarget(null)
-              showToast('Artikel berhasil dihapus.', 'success')
-            }}>
+            <Button variant="danger" onClick={deleteArticle}>
               Hapus
             </Button>
           </div>

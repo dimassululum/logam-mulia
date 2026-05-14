@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, PackagePlus, Pencil, XCircle } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
+import { apiClient } from '@/core/lib/api-client'
 import {
   adminProductRecords,
   productCategoryOptions,
@@ -71,7 +72,9 @@ function getStockTone(stock: number) {
 }
 
 export default function ProductManagementScreen() {
-  const [products, setProducts] = useState(adminProductRecords)
+  const [products, setProducts] = useState<any[]>([])
+  const [categories, setCategories] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -84,9 +87,43 @@ export default function ProductManagementScreen() {
   const [priceMode, setPriceMode] = useState<PriceChangeMode>('set')
   const [percentageValue, setPercentageValue] = useState('')
   const [priceFields, setPriceFields] = useState<ProductPriceField[]>([])
-  const [deleteTarget, setDeleteTarget] = useState<AdminProductRecord | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
   const [deleteScope, setDeleteScope] = useState<'single' | 'bulk'>('single')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+
+  const fetchData = async () => {
+    setIsLoading(true)
+    try {
+      const [productsRes, categoriesRes] = await Promise.all([
+        apiClient.get('/products?limit=100'),
+        apiClient.get('/categories')
+      ])
+
+      setCategories(categoriesRes.data.data)
+      setProducts(productsRes.data.data.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        sku: p.slug, // using slug as sku for now
+        category: p.category?.name || 'Lainnya',
+        price: p.price,
+        stock: p.stock,
+        weightGram: p.weightGram,
+        status: p.isActive ? 'active' : 'inactive',
+        updatedAt: p.updatedAt,
+        accent: 'from-blue-50 to-blue-100', // Mock accent color
+        imageUrl: p.images?.[0]?.imageUrl || '',
+      })))
+    } catch (err) {
+      console.error('Error fetching data', err)
+      showToast('Gagal memuat data produk', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -174,49 +211,68 @@ export default function ProductManagementScreen() {
     )
   }
 
-  function applyPriceUpdate() {
-    if (priceMode === 'set') {
-      if (priceFields.some((field) => !Number(field.value))) {
-        showToast('Harga baru tiap produk wajib diisi.', 'error')
-        return
-      }
-      setProducts((current) =>
-        current.map((product) => {
-          const target = priceFields.find((field) => field.id === product.id)
-          return target ? { ...product, price: Number(target.value), updatedAt: new Date().toISOString() } : product
-        }),
-      )
-    } else {
-      const percentage = Number(percentageValue)
-      if (!percentage) {
-        showToast('Persentase wajib diisi.', 'error')
-        return
-      }
-      setProducts((current) =>
-        current.map((product) => {
-          if (!selectedProductIds.includes(product.id)) return product
+  async function applyPriceUpdate() {
+    try {
+      const updates: Promise<any>[] = []
+
+      if (priceMode === 'set') {
+        if (priceFields.some((field) => !Number(field.value))) {
+          showToast('Harga baru tiap produk wajib diisi.', 'error')
+          return
+        }
+        priceFields.forEach(field => {
+          if (field.value) {
+            updates.push(apiClient.put(`/products/${field.id}`, { price: Number(field.value) }))
+          }
+        })
+      } else {
+        const percentage = Number(percentageValue)
+        if (!percentage) {
+          showToast('Persentase wajib diisi.', 'error')
+          return
+        }
+        products.forEach((product) => {
+          if (!selectedProductIds.includes(product.id)) return
           const delta = Math.round(product.price * (percentage / 100))
           const nextPrice = priceMode === 'increase' ? product.price + delta : Math.max(0, product.price - delta)
-          return { ...product, price: nextPrice, updatedAt: new Date().toISOString() }
-        }),
-      )
+          updates.push(apiClient.put(`/products/${product.id}`, { price: nextPrice }))
+        })
+      }
+
+      await Promise.all(updates)
+      setIsPriceModalOpen(false)
+      showToast('Harga produk berhasil diperbarui.', 'success')
+      fetchData()
+    } catch (err) {
+      console.error(err)
+      showToast('Gagal mengupdate harga produk.', 'error')
     }
-    setIsPriceModalOpen(false)
-    showToast('Harga produk berhasil diperbarui.', 'success')
   }
 
-  function deleteSelectedProducts() {
-    setProducts((current) => current.filter((product) => !selectedProductIds.includes(product.id)))
-    setSelectedProductIds([])
-    setDeleteTarget(null)
-    showToast('Produk berhasil dihapus.', 'success')
+  async function deleteSelectedProducts() {
+    try {
+      await Promise.all(selectedProductIds.map(id => apiClient.delete(`/products/${id}`)))
+      setSelectedProductIds([])
+      setDeleteTarget(null)
+      showToast('Produk berhasil dihapus.', 'success')
+      fetchData()
+    } catch (err) {
+      console.error(err)
+      showToast('Gagal menghapus produk.', 'error')
+    }
   }
 
-  function deleteSingleProduct(productId: string) {
-    setProducts((current) => current.filter((product) => product.id !== productId))
-    setSelectedProductIds((current) => current.filter((id) => id !== productId))
-    setDeleteTarget(null)
-    showToast('Produk berhasil dihapus.', 'success')
+  async function deleteSingleProduct(productId: string) {
+    try {
+      await apiClient.delete(`/products/${productId}`)
+      setSelectedProductIds((current) => current.filter((id) => id !== productId))
+      setDeleteTarget(null)
+      showToast('Produk berhasil dihapus.', 'success')
+      fetchData()
+    } catch (err) {
+      console.error(err)
+      showToast('Gagal menghapus produk.', 'error')
+    }
   }
 
   const columns: AdminTableColumn[] = [
@@ -288,9 +344,15 @@ export default function ProductManagementScreen() {
           />
         </label>,
         <div key={`${product.id}-product`} className="flex items-center gap-3">
-          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${product.accent} text-xs font-semibold text-navy-700`}>
-            {product.weightGram}g
-          </div>
+          {product.imageUrl ? (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl overflow-hidden bg-navy-50">
+              <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${product.accent} text-xs font-semibold text-navy-700`}>
+              {product.weightGram}g
+            </div>
+          )}
           <div className="min-w-0">
             <p className="truncate font-semibold text-navy-900">{product.name}</p>
             <p className="mt-1 text-xs text-navy-500">{product.category}</p>
@@ -411,12 +473,7 @@ export default function ProductManagementScreen() {
               <p className="text-sm font-medium text-navy-900">{selectedProductIds.length} produk dipilih</p>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => openPriceModal()}>Ubah Harga</Button>
-                <Button variant="danger" size="sm" onClick={() => {
-                  setDeleteScope('bulk')
-                  setDeleteTarget(selectedProducts[0] ?? null)
-                }}>
-                  Hapus
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedProductIds([])}>Batalkan Pilihan</Button>
               </div>
             </div>
           </Card>
@@ -448,7 +505,7 @@ export default function ProductManagementScreen() {
             onChange={setCategoryFilter}
             options={[
               { value: 'all', label: 'Semua kategori' },
-              ...productCategoryOptions.map((category) => ({ value: category, label: category })),
+              ...categories.map((category) => ({ value: category.name, label: category.name })),
             ]}
           />
           <FilterSelect label="Stok" value={stockFilter} onChange={setStockFilter} options={STOCK_FILTER_OPTIONS} />
@@ -457,39 +514,20 @@ export default function ProductManagementScreen() {
 
       <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Ubah Harga Produk" size="lg">
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {PRICE_MODE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setPriceMode(option.value)}
-                className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
-                  priceMode === option.value ? 'border-gold-400 bg-gold-50 text-navy-900' : 'border-navy-200 text-navy-600 hover:bg-navy-50'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          {priceMode === 'set' ? (
-            <div className="space-y-3">
-              {selectedProducts.map((product) => {
-                const field = priceFields.find((item) => item.id === product.id)
-                return (
-                  <div key={product.id} className="grid gap-3 rounded-2xl border border-navy-100 p-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                    <div>
-                      <p className="font-medium text-navy-900">{product.name}</p>
-                      <p className="mt-1 text-xs text-navy-500">{formatRupiah(product.price)}</p>
-                    </div>
-                    <Input id={`price-${product.id}`} label="Harga baru" value={field?.value ?? ''} onChange={(event) => handlePriceFieldChange(product.id, event.target.value)} placeholder="Masukkan harga" />
+          <div className="space-y-3">
+            {selectedProducts.map((product) => {
+              const field = priceFields.find((item) => item.id === product.id)
+              return (
+                <div key={product.id} className="grid gap-3 rounded-2xl border border-navy-100 p-4 md:grid-cols-[minmax(0,1fr)_220px]">
+                  <div>
+                    <p className="font-medium text-navy-900">{product.name}</p>
+                    <p className="mt-1 text-xs text-navy-500">{formatRupiah(product.price)}</p>
                   </div>
-                )
-              })}
-            </div>
-          ) : (
-            <Input id="bulk-percentage" label="Persentase" value={percentageValue} onChange={(event) => setPercentageValue(sanitizeNumberInput(event.target.value))} placeholder="Contoh: 3" />
-          )}
+                  <Input id={`price-${product.id}`} label="Harga baru" value={field?.value ?? ''} onChange={(event) => handlePriceFieldChange(product.id, event.target.value)} placeholder="Masukkan harga" />
+                </div>
+              )
+            })}
+          </div>
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button variant="ghost" onClick={() => setIsPriceModalOpen(false)}>Batal</Button>

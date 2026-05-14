@@ -80,6 +80,7 @@ export interface AdminOrderRecipientDetail extends AdminOrderPartyDetail {
   address: string
   postalCode: string
   ktpDocumentLabel: string
+  ktpUrl?: string | null
 }
 
 export type AdminOrderFulfillmentMethod = 'delivery' | 'self_pickup'
@@ -760,6 +761,7 @@ export function getOrderBadgeVariant(status: OrderStatus) {
     case 'pending':
       return 'pending'
     case 'paid':
+    case 'success':
       return 'paid'
     case 'processing':
       return 'processing'
@@ -772,6 +774,7 @@ export function getOrderBadgeVariant(status: OrderStatus) {
     case 'refund':
       return 'refund'
     case 'cancelled':
+    case 'canceled':
       return 'cancelled'
     default:
       return 'neutral'

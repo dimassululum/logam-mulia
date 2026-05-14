@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Footer from '@/shared/layout/Footer'
 import Button from '@/shared/ui/Button'
 import BannerSlider from '@/features/home/BannerSlider'
+import { getHomeData, type HomeProduct } from '@/features/home/home-api'
 import {
   ShieldCheck,
   TrendingUp,
@@ -69,11 +70,110 @@ const articles = [
 ]
 
 const popularProducts = [
-  { id: '1', slug: 'emas-antam-10g', name: 'Emas Antam 10g', price: 'Rp 11.420.000', badge: 'Terlaris', sold: '500+' },
-  { id: '2', slug: 'emas-antam-1g', name: 'Emas Antam 1g', price: 'Rp 1.142.000', badge: 'Stok Terbatas', sold: '1rb+', originalPrice: 'Rp 1.202.000' },
-  { id: '3', slug: 'emas-antam-100g', name: 'Emas Antam 100g', price: 'Rp 114.200.000', badge: '', sold: '100+' },
-  { id: '4', slug: 'gift-series-0-5g', name: 'Gift Series 0.5g', price: 'Rp 650.000', badge: '', sold: '300+' },
+  { id: '1', slug: 'emas-antam-10g', name: 'Emas Antam 10g', price: 'Rp 11.420.000', badge: 'Terlaris', sold: '500+', imageUrl: '' },
+  { id: '2', slug: 'emas-antam-1g', name: 'Emas Antam 1g', price: 'Rp 1.142.000', badge: 'Stok Terbatas', sold: '1rb+', originalPrice: 'Rp 1.202.000', imageUrl: '' },
+  { id: '3', slug: 'emas-antam-100g', name: 'Emas Antam 100g', price: 'Rp 114.200.000', badge: '', sold: '100+', imageUrl: '' },
+  { id: '4', slug: 'gift-series-0-5g', name: 'Gift Series 0.5g', price: 'Rp 650.000', badge: '', sold: '300+', imageUrl: '' },
 ]
+
+const fallbackPriceCards = [
+  {
+    label: 'Emas',
+    tone: 'gold',
+    price: 'Rp2.795.000,00',
+    meta: 'Harga Terakhir: Rp2.796.000,00',
+    movement: 'down',
+    movementLabel: 'Rp-1,000.00',
+  },
+  {
+    label: 'Perak',
+    tone: 'silver',
+    price: 'Rp47.450,00',
+    meta: 'Harga Terakhir: Rp47.300,00',
+    movement: 'up',
+    movementLabel: 'Rp150.00',
+  },
+]
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function formatShortCurrency(value: number) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+function formatLastUpdated(products: HomeProduct[]) {
+  const latest = products
+    .map((product) => new Date(product.updatedAt).getTime())
+    .filter((time) => Number.isFinite(time))
+    .sort((left, right) => right - left)[0]
+
+  if (!latest) return 'Perubahan terakhir: 04 May 2026 08:54:00'
+
+  return `Perubahan terakhir: ${new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(latest))}`
+}
+
+function getUnitPrice(product: HomeProduct) {
+  if (!product.weightGram) return product.price
+  return product.price / product.weightGram
+}
+
+function findMetalProduct(products: HomeProduct[], keywords: string[]) {
+  return products.find((product) => {
+    const searchable = `${product.name} ${product.categoryName}`.toLowerCase()
+    return keywords.some((keyword) => searchable.includes(keyword))
+  })
+}
+
+function buildPriceCards(products: HomeProduct[]) {
+  if (products.length === 0) return fallbackPriceCards
+
+  const goldProduct = findMetalProduct(products, ['emas', 'gold', 'antam']) || products[0]
+  const silverProduct = findMetalProduct(products, ['perak', 'silver'])
+
+  const cards = [
+    {
+      label: 'Emas',
+      tone: 'gold',
+      price: formatCurrency(getUnitPrice(goldProduct)),
+      meta: `${goldProduct.name} tersedia ${goldProduct.stock} pcs`,
+      movement: 'flat',
+      movementLabel: 'Harga dari admin',
+    },
+  ]
+
+  if (silverProduct) {
+    cards.push({
+      label: 'Perak',
+      tone: 'silver',
+      price: formatCurrency(getUnitPrice(silverProduct)),
+      meta: `${silverProduct.name} tersedia ${silverProduct.stock} pcs`,
+      movement: 'flat',
+      movementLabel: 'Harga dari admin',
+    })
+  } else {
+    cards.push(fallbackPriceCards[1])
+  }
+
+  return cards
+}
 
 function GoldBarIcon({ className }: { className?: string }) {
   return (
@@ -83,33 +183,111 @@ function GoldBarIcon({ className }: { className?: string }) {
   )
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const homeData = await getHomeData()
+  const priceCards = buildPriceCards(homeData.products)
+
+  const displayProducts = homeData.products.length > 0
+    ? homeData.products.slice(0, 4).map((p) => ({
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        price: formatShortCurrency(p.price || 0),
+        badge: p.stock < 10 && p.stock > 0 ? 'Stok Terbatas' : (p.stock === 0 ? 'Habis' : ''),
+        sold: `${Math.max(0, p.stock)} stok`,
+        originalPrice: '',
+        imageUrl: p.imageUrl,
+      }))
+    : popularProducts;
+
+  const displayBoutiques = homeData.boutiques.length > 0
+    ? homeData.boutiques.slice(0, 4).map((b) => ({
+        id: b.id,
+        city: b.city || b.name,
+        address: b.address,
+        googleMapsUrl: b.googleMapsUrl,
+      }))
+    : boutiques;
+
+  const displayArticles = homeData.articles.length > 0
+    ? homeData.articles.slice(0, 3).map((a) => ({
+        id: a.slug,
+        tag: 'Artikel',
+        title: a.title,
+        desc: a.excerpt,
+        coverUrl: a.coverUrl,
+      }))
+    : articles;
+
   return (
     <>
       <section className="bg-navy-900 flex h-[calc(100svh-4rem)] max-h-[820px] min-h-[560px] flex-col items-center border-b border-gold-500/20 md:h-auto md:max-h-none md:min-h-0 md:pb-12">
         <div className="relative w-full min-h-0 flex-1 overflow-hidden bg-navy-950 md:aspect-[16/9] md:flex-none">
-          <video
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="absolute inset-0 h-[108%] w-full object-cover object-top md:h-full md:object-center"
-          >
-            <source src="/videos/home-hero-latest.mp4" type="video/mp4" />
-          </video>
+          {homeData.hero.status === 'active' ? (
+            <video
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="absolute inset-0 h-[108%] w-full object-cover object-top md:h-full md:object-center"
+            >
+              <source src={homeData.hero.videoUrl} type="video/mp4" />
+            </video>
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(212,175,55,0.25),transparent_38%),linear-gradient(135deg,#061228,#152b4b)]" />
+          )}
         </div>
 
         <div className="container-main z-10 flex shrink-0 justify-center py-6 md:mt-8 md:py-0">
           <Link href="/products" className="inline-block w-full sm:w-auto">
             <Button size="lg" className="w-full sm:w-auto min-w-[240px] bg-gradient-to-r from-gold-400 to-gold-500 text-navy-900 shadow-[0_0_20px_rgba(212,175,55,0.4)] hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_14px_34px_rgba(212,175,55,0.42)] active:translate-y-0 active:scale-95 border-none text-base font-bold py-4 px-10 transition-all [transition-duration:var(--transition-base)]">
-              Beli Emas Disini
+              {homeData.hero.buttonTitle}
             </Button>
           </Link>
         </div>
       </section>
 
-      <section className="container-main mt-12 mb-8 relative z-10">
-        <BannerSlider />
+      {/* Price Update Section */}
+      <section className="container-main mt-12 relative z-10 flex justify-center">
+        <div className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-[380px]">
+          {/* Top bar */}
+          <div className="bg-[#2a4066] text-white py-3 px-4 flex items-center justify-start gap-2 text-[13px] font-medium">
+            <svg className="w-[18px] h-[18px] text-gold-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {formatLastUpdated(homeData.products)}
+          </div>
+
+          {/* Stacked Content */}
+          <div className="flex flex-col">
+            {priceCards.map((card) => (
+              <div key={card.label} className={`${card.tone === 'gold' ? 'bg-[#d4af37]' : 'bg-[#b0b5b9]'} p-6 text-white relative overflow-hidden`}>
+                <div className="relative z-10">
+                  <h3 className="font-serif text-[42px] font-bold mb-4 drop-shadow-sm leading-none">{card.label}</h3>
+                  <p className="text-[15px] font-medium opacity-90 mb-1">Harga/gram</p>
+                  <p className="text-[34px] font-bold mb-6 drop-shadow-sm leading-none tracking-tight">{card.price}</p>
+
+                  <div className="flex flex-col gap-2">
+                    <div className={`flex items-center gap-1.5 font-bold text-base ${card.movement === 'down' ? 'text-[#ff4d4d]' : card.movement === 'up' ? 'text-[#21c55e]' : 'text-white'}`}>
+                      {card.movement === 'down' ? (
+                        <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 15a.75.75 0 01-.53-.22l-4.5-4.5a.75.75 0 111.06-1.06l3.22 3.22V3a.75.75 0 011.5 0v9.44l3.22-3.22a.75.75 0 111.06 1.06l-4.5 4.5A.75.75 0 0110 15z" clipRule="evenodd" /></svg>
+                      ) : card.movement === 'up' ? (
+                        <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 5a.75.75 0 01.53.22l4.5 4.5a.75.75 0 11-1.06 1.06l-3.22-3.22v9.44a.75.75 0 01-1.5 0V7.56l-3.22 3.22a.75.75 0 01-1.06-1.06l4.5-4.5A.75.75 0 0110 5z" clipRule="evenodd" /></svg>
+                      ) : null}
+                      {card.movementLabel}
+                    </div>
+                    <p className="text-[14px] font-medium opacity-90">{card.meta}</p>
+                  </div>
+                </div>
+                <div className="absolute -right-10 top-10 w-48 h-32 bg-white/10 rounded-2xl transform rotate-[15deg] pointer-events-none"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="container-main mt-8 mb-8 relative z-10">
+        <BannerSlider banners={homeData.banners} />
       </section>
 
       <section className="section-full">
@@ -127,7 +305,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
-            {popularProducts.map((product) => (
+            {displayProducts.map((product: any) => (
               <Link
                 key={product.id}
                 href={`/products/${product.slug}`}
@@ -135,7 +313,11 @@ export default function HomePage() {
                 className="card-product p-4 relative overflow-hidden block"
               >
                 <div className="product-img-wrap mb-stack-sm">
-                  <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
+                  {product.imageUrl ? (
+                    <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -199,16 +381,19 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {boutiques.map((boutique) => (
-              <div
-                key={boutique.city}
+            {displayBoutiques.map((boutique: any) => (
+              <a
+                key={boutique.id || boutique.city}
+                href={boutique.googleMapsUrl || '/boutiques'}
+                target={boutique.googleMapsUrl ? '_blank' : undefined}
+                rel={boutique.googleMapsUrl ? 'noreferrer' : undefined}
                 className="card-surface p-4 flex flex-col hover:border-gold-400/50 transition-colors"
                 style={{ transitionDuration: 'var(--transition-base)' }}
               >
                 <MapPin className="w-5 h-5 text-gold-400 mb-stack-sm" />
                 <h5 className="font-bold text-navy-900 text-sm">{boutique.city}</h5>
                 <p className="text-[11px] text-navy-600">{boutique.address}</p>
-              </div>
+              </a>
             ))}
           </div>
         </div>
@@ -221,13 +406,17 @@ export default function HomePage() {
 
         <div className="container-main">
           <div className="flex gap-gutter overflow-x-auto no-scrollbar snap-x snap-mandatory pb-4">
-            {articles.map((article) => (
+            {displayArticles.map((article: any) => (
               <article
                 key={article.title}
                 className="min-w-[85%] md:min-w-[30%] snap-center card-surface rounded-2xl overflow-hidden flex flex-col shadow-elevation-mid"
               >
-                <div className="relative aspect-video bg-gradient-to-br from-navy-900 to-navy-800 flex items-center justify-center">
-                  <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
+                <div className="relative aspect-video bg-gradient-to-br from-navy-900 to-navy-800 flex items-center justify-center overflow-hidden">
+                  {article.coverUrl ? (
+                    <img src={article.coverUrl} alt={article.title} className="h-full w-full object-cover" />
+                  ) : (
+                    <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
+                  )}
                   <div className="absolute top-4 left-4">
                     <span className="bg-navy-900/80 backdrop-blur-md text-gold-400 text-[8px] font-bold px-2 py-1 rounded uppercase tracking-wider">
                       {article.tag}
@@ -253,7 +442,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <Footer />
+      <Footer profile={homeData.footer} />
     </>
   )
 }

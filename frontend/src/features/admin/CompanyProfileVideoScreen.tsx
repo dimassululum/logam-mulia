@@ -2,17 +2,73 @@
 
 import { useEffect, useState } from 'react'
 import { Film, Save, Upload } from 'lucide-react'
-import { CompanyProfileToast, SelectField, useCompanyProfileToast, type PublishStatus } from '@/features/admin/company-profile-shared'
 import { IconActionButton } from '@/features/admin/admin-ui'
+import { fetchCompanyProfile, readProfileText, saveCompanyProfileItems } from '@/features/admin/company-profile-api'
+import { CompanyProfileToast, SelectField, useCompanyProfileToast, type PublishStatus } from '@/features/admin/company-profile-shared'
 import { AdminPageHeader, Button, Card, Input } from '@/shared/ui'
+
+type VideoFormErrors = Partial<Record<'buttonTitle' | 'videoPreviewUrl' | 'form', string>>
+
+const defaultVideoProfile = {
+  videoStatus: 'active' as PublishStatus,
+  buttonTitle: 'Mulai Sekarang',
+  videoFileName: 'hero-bg.mp4',
+  videoPreviewUrl: '/videos/hero-bg.mp4',
+}
+
+function FieldAlert({ message }: { message?: string }) {
+  if (!message) return null
+
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+      {message}
+    </div>
+  )
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 export default function CompanyProfileVideoScreen() {
   const { toast, showToast } = useCompanyProfileToast()
   const [isEditing, setIsEditing] = useState(false)
-  const [videoStatus, setVideoStatus] = useState<PublishStatus>('active')
-  const [buttonTitle, setButtonTitle] = useState('Mulai Sekarang')
-  const [videoFileName, setVideoFileName] = useState('hero-bg.mp4')
-  const [videoPreviewUrl, setVideoPreviewUrl] = useState('/videos/hero-bg.mp4')
+  const [videoStatus, setVideoStatus] = useState<PublishStatus>(defaultVideoProfile.videoStatus)
+  const [buttonTitle, setButtonTitle] = useState(defaultVideoProfile.buttonTitle)
+  const [videoFileName, setVideoFileName] = useState(defaultVideoProfile.videoFileName)
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState(defaultVideoProfile.videoPreviewUrl)
+  const [formErrors, setFormErrors] = useState<VideoFormErrors>({})
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadVideoProfile() {
+      try {
+        const profile = await fetchCompanyProfile()
+        if (!isMounted) return
+
+        const status = readProfileText(profile, 'hero_video_status', defaultVideoProfile.videoStatus)
+        setVideoStatus(status === 'inactive' ? 'inactive' : 'active')
+        setButtonTitle(readProfileText(profile, 'hero_video_button_title', defaultVideoProfile.buttonTitle))
+        setVideoFileName(readProfileText(profile, 'hero_video_file_name', defaultVideoProfile.videoFileName))
+        setVideoPreviewUrl(readProfileText(profile, 'hero_video_preview_url', defaultVideoProfile.videoPreviewUrl))
+      } catch (error) {
+        console.error('Error fetching hero video company profile', error)
+        showToast('Gagal memuat video animasi.', 'error')
+      }
+    }
+
+    loadVideoProfile()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -22,7 +78,17 @@ export default function CompanyProfileVideoScreen() {
     }
   }, [videoPreviewUrl])
 
-  function handleVideoChange(event: React.ChangeEvent<HTMLInputElement>) {
+  function clearFormError(field: keyof VideoFormErrors) {
+    setFormErrors((current) => {
+      if (!current[field] && !current.form) return current
+      const next = { ...current }
+      delete next[field]
+      delete next.form
+      return next
+    })
+  }
+
+  async function handleVideoChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -31,22 +97,43 @@ export default function CompanyProfileVideoScreen() {
     }
 
     setVideoFileName(file.name)
-    setVideoPreviewUrl(URL.createObjectURL(file))
+    setVideoPreviewUrl(await fileToDataUrl(file))
+    clearFormError('videoPreviewUrl')
   }
 
-  function saveVideoSettings() {
-    if (!buttonTitle.trim()) {
-      showToast('Judul button wajib diisi.', 'error')
-      return
+  function validateVideoSettings() {
+    const nextErrors: VideoFormErrors = {}
+
+    if (buttonTitle.trim().length < 2) {
+      nextErrors.buttonTitle = 'Judul button minimal 2 karakter.'
+    }
+    if (!videoFileName.trim() || !videoPreviewUrl.trim()) {
+      nextErrors.videoPreviewUrl = 'File video wajib dipilih.'
     }
 
-    if (!videoFileName.trim()) {
-      showToast('File video belum dipilih.', 'error')
-      return
-    }
+    setFormErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
 
-    setIsEditing(false)
-    showToast('Video animasi berhasil diperbarui.', 'success')
+  async function saveVideoSettings() {
+    if (!validateVideoSettings()) return
+
+    try {
+      await saveCompanyProfileItems([
+        { key: 'hero_video_status', value: videoStatus, type: 'text' },
+        { key: 'hero_video_button_title', value: buttonTitle.trim(), type: 'text' },
+        { key: 'hero_video_file_name', value: videoFileName.trim(), type: 'text' },
+        { key: 'hero_video_preview_url', value: videoPreviewUrl.trim(), type: 'text' },
+      ])
+      setButtonTitle(buttonTitle.trim())
+      setVideoFileName(videoFileName.trim())
+      setIsEditing(false)
+      setFormErrors({})
+      showToast('Video animasi berhasil diperbarui.', 'success')
+    } catch (error) {
+      console.error('Error saving hero video company profile', error)
+      setFormErrors({ form: 'Gagal menyimpan video animasi. Periksa data lalu coba lagi.' })
+    }
   }
 
   return (
@@ -62,7 +149,14 @@ export default function CompanyProfileVideoScreen() {
         <div className="flex items-center justify-end gap-2 border-b border-navy-100 px-4 py-4 md:px-5">
           {isEditing ? (
             <>
-              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsEditing(false)
+                  setFormErrors({})
+                }}
+              >
                 Batal
               </Button>
               <Button size="sm" onClick={saveVideoSettings}>
@@ -71,7 +165,14 @@ export default function CompanyProfileVideoScreen() {
               </Button>
             </>
           ) : (
-            <IconActionButton label="Edit video animasi" tone="edit" onClick={() => setIsEditing(true)} />
+            <IconActionButton
+              label="Edit video animasi"
+              tone="edit"
+              onClick={() => {
+                setFormErrors({})
+                setIsEditing(true)
+              }}
+            />
           )}
         </div>
 
@@ -79,6 +180,8 @@ export default function CompanyProfileVideoScreen() {
           <div className="space-y-4">
             {isEditing ? (
               <>
+                <FieldAlert message={formErrors.form} />
+
                 <SelectField
                   label="Status"
                   value={videoStatus}
@@ -93,12 +196,16 @@ export default function CompanyProfileVideoScreen() {
                   id="video-button-title"
                   label="Judul button"
                   value={buttonTitle}
-                  onChange={(event) => setButtonTitle(event.target.value)}
+                  error={formErrors.buttonTitle}
+                  onChange={(event) => {
+                    setButtonTitle(event.target.value)
+                    clearFormError('buttonTitle')
+                  }}
                 />
 
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
                   <span>Upload video</span>
-                  <label className="flex min-h-28 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-navy-200 bg-navy-50 px-4 py-6 text-center transition-colors hover:border-gold-300 hover:bg-gold-50/40">
+                  <label className={`flex min-h-28 cursor-pointer items-center justify-center rounded-2xl border border-dashed bg-navy-50 px-4 py-6 text-center transition-colors hover:border-gold-300 hover:bg-gold-50/40 ${formErrors.videoPreviewUrl ? 'border-red-400' : 'border-navy-200'}`}>
                     <input type="file" accept="video/*" className="hidden" onChange={handleVideoChange} />
                     <div className="space-y-2">
                       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white text-navy-500 shadow-elevation-low">
@@ -108,6 +215,7 @@ export default function CompanyProfileVideoScreen() {
                       <p className="text-xs text-navy-500">Klik untuk pilih file baru</p>
                     </div>
                   </label>
+                  {formErrors.videoPreviewUrl ? <p className="text-xs text-red-500">{formErrors.videoPreviewUrl}</p> : null}
                 </label>
               </>
             ) : (

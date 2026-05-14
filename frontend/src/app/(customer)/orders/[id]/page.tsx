@@ -5,6 +5,7 @@ import AppBar from '@/shared/ui/AppBar'
 import Badge from '@/shared/ui/Badge'
 import Button from '@/shared/ui/Button'
 import { ArrowRight, CreditCard, MapPin, Package2, ShieldCheck, Truck } from 'lucide-react'
+import OrderWhatsappButton from '@/features/orders/OrderWhatsappButton'
 
 interface PageProps {
   params: { id: string }
@@ -198,6 +199,7 @@ export default function OrderDetailPage({ params }: PageProps) {
         </section>
 
         <div className="grid gap-3 sm:grid-cols-2">
+          {order.status === 'processing' ? <OrderWhatsappButton orderId={order.id} /> : null}
           <Link href="/orders" className="block">
             <Button variant="secondary" size="lg" fullWidth>
               Kembali ke Pesanan

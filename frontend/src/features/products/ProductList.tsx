@@ -5,18 +5,12 @@ import { Product } from '@/core/types'
 import ProductCard from './ProductCard'
 import { ProductCardSkeleton } from '@/shared/ui/Skeleton'
 import { Search, ListFilter, Check } from 'lucide-react'
+import { addProductToCart } from '@/features/cart/cart-storage'
 
 interface ProductListProps {
   products: Product[]
   isLoading?: boolean
 }
-
-const CATEGORIES = [
-  { value: 'all',       label: 'Semua'     },
-  { value: 'batangan',  label: 'Emas Batangan' },
-  { value: 'perhiasan', label: 'Perhiasan' },
-  { value: 'koin',      label: 'Koin Emas' },
-]
 
 const SORT_OPTIONS = [
   { value: 'newest',     label: 'Terbaru'         },
@@ -31,6 +25,13 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
   const [sort,          setSort]          = useState('newest')
   const [sortOpen,      setSortOpen]      = useState(false)
   const sortRef = useRef<HTMLDivElement>(null)
+  const categories = [
+    { value: 'all', label: 'Semua' },
+    ...Array.from(new Set(products.map((product) => product.category).filter(Boolean))).map((name) => ({
+      value: name,
+      label: name,
+    })),
+  ]
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -42,8 +43,6 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
     document.addEventListener('mousedown', handleOutside)
     return () => document.removeEventListener('mousedown', handleOutside)
   }, [])
-
-  const currentSortLabel = SORT_OPTIONS.find(o => o.value === sort)?.label ?? 'Urutkan'
 
   const filtered = products
     .filter((p) => category === 'all' || p.category === category)
@@ -73,7 +72,7 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
       {/* Category Tabs */}
       <div className="mb-4">
         <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar" role="tablist">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat.value}
               role="tab"
@@ -143,7 +142,7 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
             <ProductCard
               key={product.id}
               product={product}
-              onAddToCart={(p) => console.log('Add to cart:', p.id)}
+              onAddToCart={(p) => addProductToCart(p)}
             />
           ))}
         </div>

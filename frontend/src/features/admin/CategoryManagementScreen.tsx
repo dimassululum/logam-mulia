@@ -6,6 +6,7 @@ import {
   type AdminCategoryRecord,
   type CatalogStatus,
 } from '@/features/admin/admin-management-data'
+import { apiClient } from '@/core/lib/api-client'
 import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admin/admin-management-shared'
 import {
   FilterModal,
@@ -34,7 +35,8 @@ function slugify(value: string) {
 }
 
 export default function CategoryManagementScreen() {
-  const [categories, setCategories] = useState(adminCategoryRecords)
+  const [categories, setCategories] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
@@ -42,9 +44,33 @@ export default function CategoryManagementScreen() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [formState, setFormState] = useState(EMPTY_FORM)
-  const [deleteTarget, setDeleteTarget] = useState<AdminCategoryRecord | null>(null)
-  const [detailTarget, setDetailTarget] = useState<AdminCategoryRecord | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
+  const [detailTarget, setDetailTarget] = useState<any | null>(null)
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+
+  const fetchCategories = async () => {
+    setIsLoading(true)
+    try {
+      const { data } = await apiClient.get('/categories')
+      setCategories(data.data.map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        description: cat.description || '',
+        productCount: cat._count?.products || 0,
+        status: 'active', // Backend doesn't have status for category yet
+      })))
+    } catch (err) {
+      console.error('Error fetching categories', err)
+      showToast('Gagal mengambil data kategori', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchCategories()
+  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -69,7 +95,7 @@ export default function CategoryManagementScreen() {
 
     return [...base].sort((left, right) => {
       const direction = sortDirection === 'asc' ? 1 : -1
-      return (left[sortKey] - right[sortKey]) * direction
+      return ((left[sortKey] || 0) - (right[sortKey] || 0)) * direction
     })
   }, [categories, search, statusFilter, sortKey, sortDirection])
 
@@ -82,7 +108,7 @@ export default function CategoryManagementScreen() {
     setIsFormOpen(true)
   }
 
-  function openEditModal(category: AdminCategoryRecord) {
+  function openEditModal(category: any) {
     setFormState({
       id: category.id,
       name: category.name,
@@ -92,31 +118,32 @@ export default function CategoryManagementScreen() {
     setIsFormOpen(true)
   }
 
-  function saveCategory() {
-    if (!formState.name.trim() || !formState.description.trim()) {
-      showToast('Nama dan deskripsi wajib diisi.', 'error')
+  async function saveCategory() {
+    if (!formState.name.trim()) {
+      showToast('Nama kategori wajib diisi.', 'error')
       return
     }
 
-    const existing = categories.find((category) => category.id === formState.id)
-    const nextCategory: AdminCategoryRecord = {
-      id: formState.id || `CAT-${String(categories.length + 1).padStart(3, '0')}`,
-      name: formState.name.trim(),
-      slug: slugify(formState.name),
-      description: formState.description.trim(),
-      imageHint: existing?.imageHint ?? '',
-      productCount: existing?.productCount ?? 0,
-      status: formState.status,
-      updatedAt: new Date().toISOString(),
-    }
+    try {
+      const payload = {
+        name: formState.name.trim(),
+        slug: slugify(formState.name),
+        description: formState.description.trim(),
+      }
 
-    setCategories((current) => {
-      const exists = current.some((category) => category.id === nextCategory.id)
-      if (!exists) return [nextCategory, ...current]
-      return current.map((category) => (category.id === nextCategory.id ? nextCategory : category))
-    })
-    setIsFormOpen(false)
-    showToast('Kategori berhasil disimpan.', 'success')
+      if (formState.id) {
+        await apiClient.put(`/categories/${formState.id}`, payload)
+        showToast('Kategori berhasil diupdate.', 'success')
+      } else {
+        await apiClient.post('/categories', payload)
+        showToast('Kategori berhasil ditambahkan.', 'success')
+      }
+      setIsFormOpen(false)
+      fetchCategories()
+    } catch (err: any) {
+      console.error('Error saving category', err)
+      showToast(err.response?.data?.message || 'Gagal menyimpan kategori', 'error')
+    }
   }
 
   const columns: AdminTableColumn[] = [
@@ -215,13 +242,15 @@ export default function CategoryManagementScreen() {
       <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={formState.id ? 'Edit Kategori' : 'Tambah Kategori'} size="md">
         <div className="space-y-4">
           <Input id="category-name" label="Nama" value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} />
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
-            Status
-            <select value={formState.status} onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CatalogStatus }))} className={adminSelectClassName}>
-              <option value="active">Aktif</option>
-              <option value="inactive">Nonaktif</option>
-            </select>
-          </label>
+          {formState.id && (
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
+              Status
+              <select value={formState.status} onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CatalogStatus }))} className={adminSelectClassName}>
+                <option value="active">Aktif</option>
+                <option value="inactive">Nonaktif</option>
+              </select>
+            </label>
+          )}
           <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
             Deskripsi
             <textarea value={formState.description} onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-2xl border border-navy-200 bg-white px-4 py-3 text-sm text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-400/30" />
@@ -257,15 +286,22 @@ export default function CategoryManagementScreen() {
       <Modal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Hapus Kategori" size="sm">
         <div className="space-y-4">
           <p className="text-sm text-navy-600">
-            Kategori <span className="font-semibold text-navy-900">{deleteTarget?.name}</span> akan dihapus.
+            Kategori <span className="font-semibold text-navy-900">{deleteTarget?.name}</span> akan dihapus permanen. Produk yang terhubung tidak ikut terhapus.
           </p>
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Batal</Button>
-            <Button variant="danger" onClick={() => {
+            <Button variant="danger" onClick={async () => {
               if (!deleteTarget) return
-              setCategories((current) => current.filter((category) => category.id !== deleteTarget.id))
-              setDeleteTarget(null)
-              showToast('Kategori berhasil dihapus.', 'success')
+              try {
+                await apiClient.delete(`/categories/${deleteTarget.id}`)
+                showToast('Kategori berhasil dihapus.', 'success')
+                fetchCategories()
+              } catch (err: any) {
+                console.error(err)
+                showToast(err.response?.data?.message || 'Gagal menghapus kategori', 'error')
+              } finally {
+                setDeleteTarget(null)
+              }
             }}>
               Hapus
             </Button>

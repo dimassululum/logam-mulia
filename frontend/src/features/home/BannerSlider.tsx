@@ -1,27 +1,28 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Image from 'next/image'
 import { cn } from '@/core/lib/utils'
+import type { HomeBanner } from '@/features/home/home-api'
 
-const banners = [
-  { id: 1, src: '/images/banner-1.png', alt: 'Promo Beli Emas Online' },
-  { id: 2, src: '/images/banner-2.png', alt: 'Gempita Hari Raya' },
-  { id: 3, src: '/images/banner-3.jpg', alt: 'Simfoni Ibu Pertiwi' },
+const fallbackBanners: HomeBanner[] = [
+  { id: 'banner-1', imageUrl: '/images/banner-1.png', title: 'Promo Beli Emas Online' },
+  { id: 'banner-2', imageUrl: '/images/banner-2.png', title: 'Gempita Hari Raya' },
+  { id: 'banner-3', imageUrl: '/images/banner-3.jpg', title: 'Simfoni Ibu Pertiwi' },
 ]
 
-export default function BannerSlider() {
+export default function BannerSlider({ banners = fallbackBanners }: { banners?: HomeBanner[] }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const visibleBanners = banners.length > 0 ? banners : fallbackBanners
 
   useEffect(() => {
     const interval = setInterval(() => {
       if (!scrollRef.current) return
-      
-      const nextIndex = (currentIndex + 1) % banners.length
+
+      const nextIndex = (currentIndex + 1) % visibleBanners.length
       const container = scrollRef.current
       const child = container.children[nextIndex] as HTMLElement
-      
+
       if (child) {
         container.scrollTo({
           left: child.offsetLeft,
@@ -32,7 +33,7 @@ export default function BannerSlider() {
     }, 4000)
 
     return () => clearInterval(interval)
-  }, [currentIndex])
+  }, [currentIndex, visibleBanners.length])
 
   const handleScroll = () => {
     if (!scrollRef.current) return
@@ -40,7 +41,7 @@ export default function BannerSlider() {
     const scrollPosition = container.scrollLeft
     const width = container.offsetWidth
     const newIndex = Math.round(scrollPosition / width)
-    
+
     if (newIndex !== currentIndex) {
       setCurrentIndex(newIndex)
     }
@@ -48,16 +49,16 @@ export default function BannerSlider() {
 
   return (
     <div className="relative w-full group">
-      <div 
+      <div
         ref={scrollRef}
         onScroll={handleScroll}
         className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar rounded-2xl shadow-elevation-mid scroll-smooth"
       >
-        {banners.map((banner) => (
+        {visibleBanners.map((banner) => (
           <div key={banner.id} className="w-full flex-none snap-center relative">
-            <img 
-              src={banner.src} 
-              alt={banner.alt}
+            <img
+              src={banner.imageUrl}
+              alt={banner.title}
               className="w-full h-auto rounded-2xl shadow-elevation-mid"
             />
           </div>
@@ -66,7 +67,7 @@ export default function BannerSlider() {
 
       {/* Indicators */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10 bg-navy-900/60 backdrop-blur-md px-4 py-2 rounded-full shadow-elevation-low">
-        {banners.map((_, idx) => (
+        {visibleBanners.map((_, idx) => (
           <button
             key={idx}
             onClick={() => {

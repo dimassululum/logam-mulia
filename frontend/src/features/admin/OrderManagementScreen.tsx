@@ -6,39 +6,37 @@ import { ArrowUpRight } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
 import {
-  adminOrderRecords,
   getOrderBadgeVariant,
   type AdminOrderRecord,
 } from '@/features/admin/admin-management-data'
+import { fetchAdminOrders, updateAdminOrderStatus } from '@/features/orders/order-api'
 import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admin/admin-management-shared'
 import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
-import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Card, Input, Modal } from '@/shared/ui'
+import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Modal } from '@/shared/ui'
 
 const ORDER_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: 'pending', label: 'Pending' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'processing', label: 'Processing' },
-  { value: 'shipped', label: 'Shipped' },
-  { value: 'delivered', label: 'Delivered' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'refund', label: 'Refund' },
+  { value: 'success', label: 'Success' },
+  { value: 'canceled', label: 'Canceled' },
 ]
 
 function getStatusLabel(status: OrderStatus) {
+  if (status === 'paid' || status === 'processing' || status === 'shipped' || status === 'delivered' || status === 'completed') return 'Success'
+  if (status === 'cancelled') return 'Canceled'
   return ORDER_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 }
 
 export default function OrderManagementScreen() {
-  const [orders, setOrders] = useState(adminOrderRecords)
+  const [orders, setOrders] = useState<AdminOrderRecord[]>([])
   const [search, setSearch] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
   const [shippingFilter, setShippingFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [activeOrder, setActiveOrder] = useState<AdminOrderRecord | null>(null)
-  const [nextStatus, setNextStatus] = useState<OrderStatus>('processing')
-  const [trackingNumber, setTrackingNumber] = useState('')
+  const [nextStatus, setNextStatus] = useState<OrderStatus>('pending')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
 
   useEffect(() => {
@@ -46,6 +44,26 @@ export default function OrderManagementScreen() {
     const timeout = window.setTimeout(() => setToast(null), 2200)
     return () => window.clearTimeout(timeout)
   }, [toast])
+
+  useEffect(() => {
+    let alive = true
+
+    async function loadOrders() {
+      try {
+        const data = await fetchAdminOrders()
+        if (alive) setOrders(data)
+      } catch {
+        if (alive) showToast('Gagal memuat pesanan dari backend.', 'error')
+      } finally {
+        if (alive) setIsLoading(false)
+      }
+    }
+
+    loadOrders()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const hasActiveFilter = statusFilter !== 'all' || shippingFilter !== 'all'
 
@@ -59,7 +77,8 @@ export default function OrderManagementScreen() {
           order.customerName.toLowerCase().includes(keyword) ||
           order.customerEmail.toLowerCase().includes(keyword)
 
-        const matchesStatus = statusFilter === 'all' || order.status === statusFilter
+        const normalizedStatus = order.status === 'cancelled' ? 'canceled' : ['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(order.status) ? 'success' : order.status
+        const matchesStatus = statusFilter === 'all' || normalizedStatus === statusFilter
         const matchesShipping =
           shippingFilter === 'all' || order.shippingMethod.toLowerCase().includes(shippingFilter.toLowerCase())
 
@@ -74,8 +93,7 @@ export default function OrderManagementScreen() {
 
   function openStatusModal(order: AdminOrderRecord) {
     setActiveOrder(order)
-    setNextStatus(order.status)
-    setTrackingNumber(order.trackingNumber ?? '')
+    setNextStatus(order.status === 'cancelled' ? 'canceled' : ['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(order.status) ? 'success' : order.status)
   }
 
   function resetFilters() {
@@ -83,26 +101,19 @@ export default function OrderManagementScreen() {
     setShippingFilter('all')
   }
 
-  function applyStatusUpdate() {
+  async function applyStatusUpdate() {
     if (!activeOrder) return
-    if (nextStatus === 'shipped' && !trackingNumber.trim()) {
-      showToast('Nomor resi wajib diisi.', 'error')
-      return
+    setIsSavingStatus(true)
+    try {
+      const updated = await updateAdminOrderStatus(activeOrder.id, nextStatus)
+      setOrders((current) => current.map((order) => (order.id === updated.id ? updated : order)))
+      setActiveOrder(null)
+      showToast('Status pesanan berhasil diperbarui.', 'success')
+    } catch {
+      showToast('Gagal memperbarui status pesanan.', 'error')
+    } finally {
+      setIsSavingStatus(false)
     }
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === activeOrder.id
-          ? {
-              ...order,
-              status: nextStatus,
-              trackingNumber: nextStatus === 'shipped' ? trackingNumber.trim() : order.trackingNumber,
-              updatedAt: new Date().toISOString(),
-            }
-          : order,
-      ),
-    )
-    setActiveOrder(null)
-    showToast('Status pesanan berhasil diperbarui.', 'success')
   }
 
   const columns: AdminTableColumn[] = [
@@ -200,26 +211,14 @@ export default function OrderManagementScreen() {
         <AdminTable
           columns={columns}
           rows={rows}
-          emptyState={<AdminEmptyState title="Pesanan tidak ditemukan" description="Ubah pencarian atau filter." />}
+          emptyState={<AdminEmptyState title={isLoading ? 'Memuat pesanan...' : 'Pesanan tidak ditemukan'} description={isLoading ? 'Data sedang diambil dari backend.' : 'Ubah pencarian atau filter.'} />}
         />
       </div>
 
       <FilterModal isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Filter Pesanan">
         <div className="grid gap-4">
           <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ value: 'all', label: 'Semua status' }, ...ORDER_STATUS_OPTIONS]} />
-          <FilterSelect
-            label="Pengiriman"
-            value={shippingFilter}
-            onChange={setShippingFilter}
-            options={[
-              { value: 'all', label: 'Semua pengiriman' },
-              { value: 'JNE', label: 'JNE' },
-              { value: 'J&T', label: 'J&T' },
-              { value: 'Paxel', label: 'Paxel' },
-              { value: 'Pos', label: 'Pos' },
-              { value: 'Self Pickup', label: 'Self Pickup' },
-            ]}
-          />
+          <FilterSelect label="Pengiriman" value={shippingFilter} onChange={setShippingFilter} options={[{ value: 'all', label: 'Semua pengiriman' }, { value: 'JNE', label: 'JNE' }, { value: 'POS', label: 'POS' }, { value: 'TIKI', label: 'TIKI' }, { value: 'Self Pickup', label: 'Self Pickup' }]} />
         </div>
       </FilterModal>
 
@@ -233,10 +232,9 @@ export default function OrderManagementScreen() {
               ))}
             </select>
           </label>
-          {nextStatus === 'shipped' && <Input id="tracking-number" label="Nomor resi" value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} />}
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setActiveOrder(null)}>Batal</Button>
-            <Button onClick={applyStatusUpdate}>Simpan</Button>
+            <Button variant="ghost" onClick={() => setActiveOrder(null)} disabled={isSavingStatus}>Batal</Button>
+            <Button onClick={applyStatusUpdate} isLoading={isSavingStatus}>Simpan</Button>
           </div>
         </div>
       </Modal>

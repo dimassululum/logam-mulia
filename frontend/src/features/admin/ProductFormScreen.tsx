@@ -1,17 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, ImagePlus, Save } from 'lucide-react'
-import {
-  adminProductRecords,
-  productCategoryOptions,
-  type AdminProductRecord,
-  type CatalogStatus,
-} from '@/features/admin/admin-management-data'
+import { useRouter } from 'next/navigation'
 import { adminSelectClassName, ManagementSection } from '@/features/admin/admin-management-shared'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Button, Card, Input } from '@/shared/ui'
+import { apiClient } from '@/core/lib/api-client'
 
 interface ProductFormScreenProps {
   productId?: string
@@ -19,35 +15,66 @@ interface ProductFormScreenProps {
 
 interface ProductFormState {
   name: string
-  category: string
+  categoryId: string
   weightGram: string
   purity: string
   price: string
   stock: string
-  status: CatalogStatus
+  status: 'active' | 'inactive'
   description: string
 }
 
-function buildInitialState(product?: AdminProductRecord): ProductFormState {
-  return {
-    name: product?.name ?? '',
-    category: product?.category ?? productCategoryOptions[0],
-    weightGram: product ? String(product.weightGram) : '',
-    purity: product?.purity ?? '99.99%',
-    price: product ? String(product.price) : '',
-    stock: product ? String(product.stock) : '',
-    status: product?.status ?? 'active',
-    description: '',
-  }
+const EMPTY_STATE: ProductFormState = {
+  name: '',
+  categoryId: '',
+  weightGram: '',
+  purity: '99.99%',
+  price: '',
+  stock: '',
+  status: 'active',
+  description: '',
 }
 
 export default function ProductFormScreen({ productId }: ProductFormScreenProps) {
-  const product = useMemo(
-    () => adminProductRecords.find((item) => item.id === productId),
-    [productId],
-  )
-  const [formState, setFormState] = useState<ProductFormState>(buildInitialState(product))
+  const router = useRouter()
+  const [formState, setFormState] = useState<ProductFormState>(EMPTY_STATE)
+  const [categories, setCategories] = useState<any[]>([])
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [imageUrl, setImageUrl] = useState<string>('')
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null)
+
+  useEffect(() => {
+    // Fetch categories for dropdown
+    apiClient.get('/categories')
+      .then(res => setCategories(res.data.data))
+      .catch(err => console.error(err))
+
+    if (productId) {
+      // Fetch product data
+      apiClient.get(`/products/${productId}`)
+        .then(res => {
+          const p = res.data.data
+          setFormState({
+            name: p.name,
+            categoryId: p.categoryId,
+            weightGram: String(p.weightGram),
+            purity: p.kadar || '99.99%',
+            price: String(p.price),
+            stock: String(p.stock),
+            status: p.isActive ? 'active' : 'inactive',
+            description: p.description || '',
+          })
+          if (p.images && p.images.length > 0) {
+            setImageUrl(p.images[0].imageUrl)
+          }
+        })
+        .catch(err => {
+          console.error(err)
+          showToast('Gagal memuat produk', 'error')
+        })
+    }
+  }, [productId])
 
   useEffect(() => {
     if (!toast) return
@@ -63,19 +90,71 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
     return value.replace(/[^\d]/g, '')
   }
 
-  function saveProduct() {
-    if (!formState.name.trim() || !formState.price || !formState.weightGram || !formState.stock) {
-      showToast('Nama, harga, gramasi, dan stok wajib diisi.', 'error')
+  function handleFileSelect(file: File) {
+    setPendingImageFile(file)
+    setImageUrl(URL.createObjectURL(file))
+  }
+
+  async function uploadImageForProduct(pid: string, file: File) {
+    const formData = new FormData()
+    formData.append('image', file)
+    formData.append('isPrimary', 'true')
+    await apiClient.post(`/products/${pid}/images`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  }
+
+  async function saveProduct() {
+    if (!formState.name.trim() || !formState.price || !formState.weightGram || !formState.stock || !formState.categoryId) {
+      showToast('Nama, kategori, harga, gramasi, dan stok wajib diisi.', 'error')
       return
     }
 
-    showToast(product ? 'Perubahan produk disimpan.' : 'Produk baru disimpan.', 'success')
+    setIsLoading(true)
+    try {
+      const payload = {
+        name: formState.name.trim(),
+        slug: formState.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+        categoryId: formState.categoryId,
+        description: formState.description.trim(),
+        price: parseFloat(formState.price),
+        weightGram: parseFloat(formState.weightGram),
+        kadar: formState.purity,
+        stock: parseInt(formState.stock, 10),
+        isActive: productId ? formState.status === 'active' : true
+      }
+
+      if (productId) {
+        await apiClient.put(`/products/${productId}`, payload)
+        // Upload pending image if any
+        if (pendingImageFile) {
+          await uploadImageForProduct(productId, pendingImageFile)
+          setPendingImageFile(null)
+        }
+        showToast('Perubahan produk disimpan.', 'success')
+      } else {
+        const res = await apiClient.post('/products', payload)
+        const newProductId = res.data.data.id
+        // Upload pending image for newly created product
+        if (pendingImageFile) {
+          await uploadImageForProduct(newProductId, pendingImageFile)
+          setPendingImageFile(null)
+        }
+        showToast('Produk baru disimpan.', 'success')
+        setTimeout(() => router.push('/admin/products'), 1000)
+      }
+    } catch (err: any) {
+      console.error(err)
+      showToast(err.response?.data?.message || 'Gagal menyimpan produk', 'error')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
     <div className="space-y-4">
       <AdminPageHeader
-        title={product ? 'Edit Produk' : 'Tambah Produk'}
+        title={productId ? 'Edit Produk' : 'Tambah Produk'}
         actions={
           <Link href="/admin/products">
             <Button variant="ghost">
@@ -89,9 +168,9 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
       <InlineToast toast={toast} />
 
       <ManagementSection
-        title={product ? product.name : 'Form Produk'}
+        title={productId ? formState.name : 'Form Produk'}
         actions={
-          <Button onClick={saveProduct}>
+          <Button onClick={saveProduct} isLoading={isLoading}>
             <Save className="h-4 w-4" />
             Simpan
           </Button>
@@ -109,20 +188,21 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
               <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
                 Kategori
                 <select
-                  value={formState.category}
-                  onChange={(event) => setFormState((current) => ({ ...current, category: event.target.value }))}
+                  value={formState.categoryId}
+                  onChange={(event) => setFormState((current) => ({ ...current, categoryId: event.target.value }))}
                   className={adminSelectClassName}
                 >
-                  {productCategoryOptions.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
+                  <option value="" disabled>Pilih Kategori</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
                     </option>
                   ))}
                 </select>
               </label>
               <Input
                 id="product-weight"
-                label="Gramasi"
+                label="Gramasi (g)"
                 value={formState.weightGram}
                 onChange={(event) =>
                   setFormState((current) => ({ ...current, weightGram: sanitize(event.target.value) }))
@@ -150,19 +230,21 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
                   setFormState((current) => ({ ...current, stock: sanitize(event.target.value) }))
                 }
               />
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700 md:col-span-2">
-                Status
-                <select
-                  value={formState.status}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, status: event.target.value as CatalogStatus }))
-                  }
-                  className={adminSelectClassName}
-                >
-                  <option value="active">Aktif</option>
-                  <option value="inactive">Nonaktif</option>
-                </select>
-              </label>
+              {productId && (
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700 md:col-span-2">
+                  Status
+                  <select
+                    value={formState.status}
+                    onChange={(event) =>
+                      setFormState((current) => ({ ...current, status: event.target.value as 'active' | 'inactive' }))
+                    }
+                    className={adminSelectClassName}
+                  >
+                    <option value="active">Aktif</option>
+                    <option value="inactive">Nonaktif</option>
+                  </select>
+                </label>
+              )}
             </div>
 
             <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
@@ -176,12 +258,49 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
             </label>
           </div>
 
-          <Card padding="md" className="border-dashed border-navy-200">
-            <div className="flex min-h-52 flex-col items-center justify-center rounded-2xl bg-navy-50 text-center">
-              <ImagePlus className="h-6 w-6 text-navy-400" />
-              <p className="mt-3 text-sm font-medium text-navy-700">Thumbnail / foto utama</p>
-              <p className="mt-1 text-xs text-navy-500">Area upload bisa disambungkan nanti.</p>
-            </div>
+          <Card padding="md" className="border-dashed border-navy-200 flex flex-col justify-center overflow-hidden relative">
+            {imageUrl ? (
+              <div className="relative w-full h-full min-h-52 rounded-2xl overflow-hidden group">
+                <img src={imageUrl} alt="Thumbnail" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleFileSelect(file)
+                      }}
+                    />
+                    <Button type="button" variant="ghost" className="text-white border-white hover:bg-white/20">Ganti Foto</Button>
+                  </label>
+                </div>
+                {pendingImageFile && (
+                  <div className="absolute bottom-2 left-2 right-2 bg-amber-500/90 text-white text-xs font-medium px-3 py-1.5 rounded-xl text-center">
+                    ⏳ Foto akan diupload saat kamu klik Simpan
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center">
+                <label className="cursor-pointer group flex min-h-52 w-full flex-col items-center justify-center rounded-2xl bg-navy-50 text-center transition hover:bg-navy-100">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleFileSelect(file)
+                    }}
+                  />
+                  <ImagePlus className="h-6 w-6 text-navy-400 group-hover:text-gold-500 transition-colors" />
+                  <p className="mt-3 text-sm font-medium text-navy-700 group-hover:text-gold-600 transition-colors">Upload Thumbnail / Foto Utama</p>
+                  <p className="mt-1 text-xs text-navy-500">Maks. 5MB (JPG, PNG, WebP)</p>
+                  {pendingImageFile && <p className="mt-2 text-xs text-amber-600 font-medium">✓ Foto siap, akan diupload saat Simpan</p>}
+                </label>
+              </div>
+            )}
           </Card>
         </div>
       </ManagementSection>

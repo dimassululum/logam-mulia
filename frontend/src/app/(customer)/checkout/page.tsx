@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, HeadphonesIcon, Lock, Mail, MapPin, Plus, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
@@ -16,7 +15,18 @@ import {
   GuestCheckoutAddress,
   GuestCheckoutProfile,
   readGuestCheckoutProfile,
+  saveCheckoutCustomerProfile,
 } from '@/features/checkout/guestCheckout'
+import {
+  calculateVoucherDiscount,
+  ClaimedVoucher,
+  LocalCartItem,
+  readCartItems,
+  readCheckoutItems,
+  readCheckoutVoucher,
+} from '@/features/cart/cart-storage'
+import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
+import { createCustomerOrder } from '@/features/orders/order-api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface EkspedisiOption {
@@ -24,11 +34,14 @@ interface EkspedisiOption {
   name: string
   time: string
   price: number
+  courier?: string
+  service?: string
 }
 
 interface ButikOption {
   id: string
   name: string
+  city: string
   address: string
 }
 
@@ -38,21 +51,11 @@ const EMPTY_ADDRESS: GuestCheckoutAddress = {
   phone: '',
   address: '',
   city: '',
+  district: '',
+  village: '',
   province: '',
   postalCode: '',
 }
-
-const EKSPEDISI_OPTIONS: EkspedisiOption[] = [
-  { id: 'jne',   name: 'JNE Reguler',   time: '2-3 hari', price: 150000 },
-  { id: 'jnt',   name: 'J&T Express',   time: '2-4 hari', price: 145000 },
-  { id: 'paxel', name: 'Paxel Next Day', time: '1-2 hari', price: 160000 },
-]
-
-const BUTIK_OPTIONS: ButikOption[] = [
-  { id: 'btk-jkt', name: 'Butik Emas LM - Graha Dipta', address: 'Jl. Pemuda No.1, Pulo Gadung, Jakarta Timur' },
-  { id: 'btk-sby', name: 'Butik Emas LM - Surabaya',    address: 'Jl. Pemuda No.109, Embong Kaliasin, Surabaya' },
-  { id: 'btk-bdg', name: 'Butik Emas LM - Bandung',     address: 'Jl. Ir. H. Juanda No.81, Dago, Bandung' },
-]
 
 const BANKS = [
   { id: 'bri',     name: 'BRI Virtual Account',     label: 'BRI' },
@@ -64,6 +67,7 @@ const BANKS = [
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
   const router = useRouter()
+  const waLink = useCompanyWhatsAppLink('Halo admin, saya butuh bantuan terkait checkout.')
   const [paymentBank, setPaymentBank] = useState('bca')
   const [showEkspedisiModal, setShowEkspedisiModal] = useState(false)
   const [showButikModal, setShowButikModal] = useState(false)
@@ -79,6 +83,98 @@ export default function CheckoutPage() {
   const [addressHistory, setAddressHistory] = useState<GuestCheckoutAddress[]>([])
   const [selectedAddress, setSelectedAddress] = useState<GuestCheckoutAddress | null>(null)
   const [addressForm, setAddressForm] = useState<GuestCheckoutAddress>(EMPTY_ADDRESS)
+  const [checkoutItems, setCheckoutItems] = useState<LocalCartItem[]>([])
+  const [checkoutVoucher, setCheckoutVoucher] = useState<ClaimedVoucher | null>(null)
+  const [ktpFile, setKtpFile] = useState<File | null>(null)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
+  const [butikOptions, setButikOptions] = useState<ButikOption[]>([])
+  const [ekspedisiOptions, setEkspedisiOptions] = useState<EkspedisiOption[]>([])
+  const [isLoadingRates, setIsLoadingRates] = useState(false)
+  const [shippingRateError, setShippingRateError] = useState('')
+
+  const [provinces, setProvinces] = useState<{id: string, name: string}[]>([])
+  const [cities, setCities] = useState<{id: string, name: string}[]>([])
+  const [districts, setDistricts] = useState<{id: string, name: string}[]>([])
+  const [villages, setVillages] = useState<{id: string, name: string}[]>([])
+
+  // Fetch Provinces on mount
+  useEffect(() => {
+    fetch('https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json')
+      .then(res => res.json())
+      .then(data => setProvinces(data))
+      .catch(err => console.error(err))
+  }, [])
+
+  // Fetch Cities when Province changes
+  useEffect(() => {
+    if (addressForm.province) {
+      const provinceId = provinces.find(p => p.name === addressForm.province)?.id
+      if (provinceId) {
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${provinceId}.json`)
+          .then(res => res.json())
+          .then(data => setCities(data))
+          .catch(err => console.error(err))
+      }
+    } else {
+      setCities([])
+    }
+  }, [addressForm.province, provinces])
+
+  // Fetch Districts when City changes
+  useEffect(() => {
+    if (addressForm.city) {
+      const cityId = cities.find(c => c.name === addressForm.city)?.id
+      if (cityId) {
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${cityId}.json`)
+          .then(res => res.json())
+          .then(data => setDistricts(data))
+          .catch(err => console.error(err))
+      }
+    } else {
+      setDistricts([])
+    }
+  }, [addressForm.city, cities])
+
+  // Fetch Villages when District changes
+  useEffect(() => {
+    if (addressForm.district) {
+      const districtId = districts.find(d => d.name === addressForm.district)?.id
+      if (districtId) {
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${districtId}.json`)
+          .then(res => res.json())
+          .then(data => setVillages(data))
+          .catch(err => console.error(err))
+      }
+    } else {
+      setVillages([])
+    }
+  }, [addressForm.district, districts])
+
+  useEffect(() => {
+    let alive = true
+
+    async function loadBoutiques() {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/boutiques?isActive=true`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!alive) return
+        setButikOptions((json.data || []).map((boutique: any) => ({
+          id: boutique.id,
+          name: boutique.name,
+          city: boutique.city,
+          address: boutique.address,
+        })))
+      } catch (error) {
+        console.error('Error fetching boutiques', error)
+      }
+    }
+
+    loadBoutiques()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     const storedProfile = readGuestCheckoutProfile()
@@ -93,7 +189,50 @@ export default function CheckoutPage() {
     setOrdererName(storedProfile.ordererName ?? storedAddresses[0]?.fullName ?? '')
     setAddressHistory(storedAddresses)
     setSelectedAddress(storedAddresses[0] ?? null)
+
+    const storedCheckoutItems = readCheckoutItems()
+    const checkedCartItems = readCartItems().filter((item) => item.checked)
+    setCheckoutItems(storedCheckoutItems.length > 0 ? storedCheckoutItems : checkedCartItems)
+    setCheckoutVoucher(readCheckoutVoucher())
   }, [router])
+
+  useEffect(() => {
+    if (deliveryType !== 'ekspedisi' || !selectedAddress?.city || checkoutItems.length === 0) return
+    let alive = true
+
+    async function loadShippingRates() {
+      setIsLoadingRates(true)
+      setShippingRateError('')
+      setSelectedEkspedisi(null)
+      try {
+        const weightGram = Math.max(1, Math.ceil(checkoutItems.reduce((sum, item) => sum + item.product.weightGram * item.quantity, 0)))
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/checkout/shipping-rates?destinationCity=${encodeURIComponent(selectedAddress.city)}&weightGram=${weightGram}`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.message)
+        if (!alive) return
+        setEkspedisiOptions((json.data || []).map((rate: any) => ({
+          id: rate.id,
+          name: rate.name,
+          time: rate.etd,
+          price: rate.price,
+          courier: rate.courier,
+          service: rate.service,
+        })))
+      } catch (error) {
+        if (alive) {
+          setEkspedisiOptions([])
+          setShippingRateError(error instanceof Error ? error.message : 'Gagal memuat ongkir RajaOngkir.')
+        }
+      } finally {
+        if (alive) setIsLoadingRates(false)
+      }
+    }
+
+    loadShippingRates()
+    return () => {
+      alive = false
+    }
+  }, [checkoutItems, deliveryType, selectedAddress])
 
   const handleSelectEkspedisi = (opt: EkspedisiOption) => {
     setSelectedEkspedisi(opt)
@@ -125,19 +264,57 @@ export default function CheckoutPage() {
   }
 
   const shippingFee = deliveryType === 'ekspedisi' && selectedEkspedisi ? selectedEkspedisi.price : 0
-  const total = 25400200 + shippingFee - 150000
+  const subtotal = checkoutItems.reduce((sum, item) => sum + item.product.totalPrice * item.quantity, 0)
+  const discount = calculateVoucherDiscount(checkoutVoucher, subtotal)
+  const total = Math.max(0, subtotal + shippingFee - discount)
+  const needsKtpUpload = !guestProfile?.hasKtp && !ktpFile
   const canPay =
-    deliveryType === 'ekspedisi'
+    subtotal > 0 && ordererName.trim() && !needsKtpUpload && deliveryType === 'ekspedisi'
       ? Boolean(selectedAddress && selectedEkspedisi)
       : deliveryType === 'butik'
-        ? Boolean(selectedButik)
+        ? subtotal > 0 && ordererName.trim() && !needsKtpUpload && Boolean(selectedButik)
         : false
 
-  const filteredButik = BUTIK_OPTIONS.filter(
+  const filteredButik = butikOptions.filter(
     (b) =>
       b.name.toLowerCase().includes(butikSearch.toLowerCase()) ||
+      b.city.toLowerCase().includes(butikSearch.toLowerCase()) ||
       b.address.toLowerCase().includes(butikSearch.toLowerCase()),
   )
+
+  async function handlePay() {
+    if (!canPay || !guestProfile) return
+
+    setIsSavingProfile(true)
+    setCheckoutError('')
+    try {
+      const selectedPhone = selectedAddress?.phone || guestProfile.phone || ''
+      const savedProfile = await saveCheckoutCustomerProfile({
+        email: guestProfile.email,
+        name: ordererName,
+        phone: selectedPhone,
+        address: deliveryType === 'ekspedisi' ? selectedAddress : null,
+        ktpFile,
+      })
+      setGuestProfile(savedProfile)
+      await createCustomerOrder({
+        profile: savedProfile,
+        ordererName,
+        checkoutItems,
+        deliveryType,
+        selectedAddress,
+        selectedEkspedisi,
+        selectedButik,
+        voucher: checkoutVoucher,
+        discountAmount: discount,
+      })
+      router.push('/payment')
+    } catch {
+      setCheckoutError('Gagal menyimpan data checkout. Coba lagi sebentar.')
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
 
   return (
     <div className="bg-surface min-h-screen pb-28">
@@ -146,9 +323,9 @@ export default function CheckoutPage() {
       <AppBar
         title="Checkout"
         rightSlot={
-          <button className="text-gold-400 hover:text-gold-300 [transition-duration:var(--transition-fast)] transition-colors">
+          <a href={waLink} target="_blank" rel="noreferrer" className="text-gold-400 hover:text-gold-300 [transition-duration:var(--transition-fast)] transition-colors" aria-label="Hubungi CS">
             <HeadphonesIcon className="w-6 h-6" />
-          </button>
+          </a>
         }
       />
 
@@ -172,6 +349,8 @@ export default function CheckoutPage() {
               placeholder="Nama pemesan"
               value={ordererName}
               onChange={(event) => setOrdererName(event.target.value)}
+              disabled={Boolean(guestProfile?.found)}
+              className={guestProfile?.found ? 'bg-navy-50' : undefined}
               required
             />
             <Input
@@ -192,9 +371,14 @@ export default function CheckoutPage() {
               ) : (
                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-navy-300 bg-surface p-6 text-center transition-colors [transition-duration:var(--transition-fast)] hover:bg-navy-50">
                   <UploadCloud className="mb-3 h-9 w-9 text-navy-400" />
-                  <p className="mb-1 font-bold text-navy-900">Unggah KTP</p>
-                  <p className="text-sm text-navy-500">JPG, PNG, atau PDF</p>
-                  <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.pdf" />
+                  <p className="mb-1 font-bold text-navy-900">{ktpFile ? ktpFile.name : 'Unggah KTP'}</p>
+                  <p className="text-sm text-navy-500">JPG, PNG, atau WebP</p>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".jpg,.jpeg,.png,.webp"
+                    onChange={(event) => setKtpFile(event.target.files?.[0] ?? null)}
+                  />
                 </label>
               )}
             </div>
@@ -205,19 +389,23 @@ export default function CheckoutPage() {
         <section className="bg-white rounded-xl border border-navy-200 p-6 shadow-elevation-low">
           <h2 className="font-heading text-xl font-bold text-navy-900 mb-4">Ringkasan Pesanan</h2>
           <div className="flex flex-col gap-2">
-            {[
-              { src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCYse2pFYrKBwoXwWPZdjNppHX-bCm42fEe7U0ZlAGtNinGmJ8HKEQfjT0zjDM_iPTccYhgA_XWnFE7wmgcJlHuGvTcE1Q2EIS8tA5IEW3StZs_cQly7B0cFkrCX30j-hb6p-ekagP03NrUKy9WYBS6qr6Bvx8IVxONcfNpGg0ixlIZcRkt46k90Nzda2b6epBCVnjpdG6ZaZY2Ad-tQC0_CLnhCK73epy76qH9Yaca23EEg8-z0OaBC_LhCrUWsyLhvapSWQh8z5i6', name: 'Antam Logam Mulia 10 Gram', qty: 1, price: 12800000 },
-              { src: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDAgPrmzcyf6Ha9-Irt1r-tT2PrYhpibSq24d1wVcDzQyCZmwtrNqSeGxhTW5BaeJSTt3k5PLDiLPNyuMa_thb7qkWA5MiCpMNBaW-c_7mw_tbRIIZFG35yWfg-N9Of5NUNDON-ofUaUPZrJh0rMmX_eDk49A5_S9olw5QmL62ZdZxQBtZwVnVK9uskPwLhMipcQAZmRZfNnf0fY5oNsMjonOiTzUFOvlogS7Gb2G1aAh040aT20x89swrbzqJEOgLGpnvzIZphjx4Q', name: 'Antam Logam Mulia 5 Gram',  qty: 2, price: 12900000 },
-            ].map((item, i) => (
-              <div key={i} className={`flex items-start gap-3 py-3 ${i === 0 ? 'border-b border-navy-100' : ''}`}>
+            {checkoutItems.length === 0 ? (
+              <div className="rounded-xl border border-navy-200 bg-navy-50 p-4 text-sm text-navy-600">
+                Belum ada item checkout. Kembali ke katalog untuk memilih produk.
+              </div>
+            ) : null}
+            {checkoutItems.map((item, i) => (
+              <div key={item.product.id} className={`flex items-start gap-3 py-3 ${i < checkoutItems.length - 1 ? 'border-b border-navy-100' : ''}`}>
                 <div className="w-16 h-16 bg-surface rounded-lg overflow-hidden border border-navy-200 flex-shrink-0 p-1">
-                  <Image src={item.src} alt={item.name} width={64} height={64} className="object-contain w-full h-full" />
+                  {item.product.imageUrl ? (
+                    <Image src={item.product.imageUrl} alt={item.product.name} width={64} height={64} className="object-contain w-full h-full" />
+                  ) : null}
                 </div>
                 <div className="flex-grow">
-                  <h3 className="font-bold text-navy-900 text-sm leading-tight">{item.name}</h3>
-                  <p className="text-navy-500 text-xs mt-0.5">Jumlah: {item.qty}</p>
+                  <h3 className="font-bold text-navy-900 text-sm leading-tight">{item.product.name}</h3>
+                  <p className="text-navy-500 text-xs mt-0.5">Jumlah: {item.quantity}</p>
                 </div>
-                <p className="font-bold text-navy-900 text-sm">{formatRupiah(item.price)}</p>
+                <p className="font-bold text-navy-900 text-sm">{formatRupiah(item.product.totalPrice * item.quantity)}</p>
               </div>
             ))}
           </div>
@@ -273,7 +461,7 @@ export default function CheckoutPage() {
                     <p className="mt-1 text-sm text-navy-600">{selectedAddress.phone}</p>
                     <p className="mt-2 text-sm text-navy-600">{selectedAddress.address}</p>
                     <p className="text-sm text-navy-600">
-                      {selectedAddress.city}, {selectedAddress.province} {selectedAddress.postalCode}
+                      {selectedAddress.village ? `${selectedAddress.village}, ` : ''}{selectedAddress.district ? `${selectedAddress.district}, ` : ''}{selectedAddress.city}, {selectedAddress.province} {selectedAddress.postalCode}
                     </p>
                   </div>
                 </div>
@@ -294,7 +482,9 @@ export default function CheckoutPage() {
                           {selectedEkspedisi.name} · {selectedEkspedisi.time} · {formatRupiah(selectedEkspedisi.price)}
                         </p>
                       ) : (
-                        <p className="mt-1 text-sm text-navy-500">Belum dipilih</p>
+                        <p className="mt-1 text-sm text-navy-500">
+                          {isLoadingRates ? 'Memuat ongkir RajaOngkir...' : shippingRateError || 'Belum dipilih'}
+                        </p>
                       )}
                     </div>
                     <Button type="button" variant="ghost" size="sm" onClick={() => setShowEkspedisiModal(true)}>
@@ -318,6 +508,7 @@ export default function CheckoutPage() {
               {selectedButik && (
                 <div className="mt-4 rounded-xl border border-navy-200 bg-white p-4">
                   <p className="font-bold text-gold-600">{selectedButik.name}</p>
+                  <p className="mt-1 text-sm text-navy-600">{selectedButik.city}</p>
                   <p className="mt-1 text-sm text-navy-600">{selectedButik.address}</p>
                   <p className="mt-2 text-sm font-bold text-green-600">Gratis biaya</p>
                 </div>
@@ -365,7 +556,21 @@ export default function CheckoutPage() {
         size="md"
       >
         <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto -mx-1 px-1">
-          {EKSPEDISI_OPTIONS.map((opt) => (
+          {isLoadingRates ? (
+            <div className="rounded-xl border border-navy-200 bg-navy-50 p-4 text-sm text-navy-600">
+              Memuat ongkir dari RajaOngkir...
+            </div>
+          ) : shippingRateError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-600">
+              {shippingRateError}
+            </div>
+          ) : null}
+          {!isLoadingRates && !shippingRateError && ekspedisiOptions.length === 0 ? (
+            <div className="rounded-xl border border-navy-200 bg-navy-50 p-4 text-sm text-navy-600">
+              Belum ada layanan ekspedisi untuk kota tujuan ini.
+            </div>
+          ) : null}
+          {ekspedisiOptions.map((opt) => (
             <RadioCard
               key={opt.id}
               selected={selectedEkspedisi?.id === opt.id}
@@ -405,6 +610,7 @@ export default function CheckoutPage() {
                 onClick={() => handleSelectButik(opt)}
               >
                 <p className="font-bold text-navy-900">{opt.name}</p>
+                <p className="text-sm text-navy-500 mt-1">{opt.city}</p>
                 <p className="text-sm text-navy-600 mt-2">{opt.address}</p>
               </RadioCard>
             ))}
@@ -434,7 +640,7 @@ export default function CheckoutPage() {
                 <p className="mt-1 text-sm text-navy-600">{address.phone}</p>
                 <p className="mt-2 text-sm text-navy-600">{address.address}</p>
                 <p className="text-sm text-navy-600">
-                  {address.city}, {address.province} {address.postalCode}
+                  {address.village ? `${address.village}, ` : ''}{address.district ? `${address.district}, ` : ''}{address.city}, {address.province} {address.postalCode}
                 </p>
               </RadioCard>
             ))}
@@ -473,22 +679,89 @@ export default function CheckoutPage() {
               onChange={(event) => handleAddressChange('phone', event.target.value)}
               required
             />
-            <Input
-              id="new-address-city"
-              label="Kota / Kabupaten"
-              placeholder="Nama kota"
-              value={addressForm.city}
-              onChange={(event) => handleAddressChange('city', event.target.value)}
-              required
-            />
-            <Input
-              id="new-address-province"
-              label="Provinsi"
-              placeholder="Nama provinsi"
-              value={addressForm.province}
-              onChange={(event) => handleAddressChange('province', event.target.value)}
-              required
-            />
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-address-province" className="text-sm font-medium text-navy-700">
+                Provinsi <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="new-address-province"
+                className="input-base bg-white"
+                value={addressForm.province}
+                onChange={(event) => {
+                  handleAddressChange('province', event.target.value)
+                  handleAddressChange('city', '')
+                  handleAddressChange('district', '')
+                  handleAddressChange('village', '')
+                }}
+                required
+              >
+                <option value="">Pilih Provinsi</option>
+                {provinces.map(p => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-address-city" className="text-sm font-medium text-navy-700">
+                Kota / Kabupaten <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="new-address-city"
+                className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                value={addressForm.city}
+                onChange={(event) => {
+                  handleAddressChange('city', event.target.value)
+                  handleAddressChange('district', '')
+                  handleAddressChange('village', '')
+                }}
+                disabled={!addressForm.province || cities.length === 0}
+                required
+              >
+                <option value="">Pilih Kota/Kabupaten</option>
+                {cities.map(c => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-address-district" className="text-sm font-medium text-navy-700">
+                Kecamatan <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="new-address-district"
+                className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                value={addressForm.district || ''}
+                onChange={(event) => {
+                  handleAddressChange('district', event.target.value)
+                  handleAddressChange('village', '')
+                }}
+                disabled={!addressForm.city || districts.length === 0}
+                required
+              >
+                <option value="">Pilih Kecamatan</option>
+                {districts.map(d => (
+                  <option key={d.id} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-address-village" className="text-sm font-medium text-navy-700">
+                Desa / Kelurahan <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="new-address-village"
+                className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                value={addressForm.village || ''}
+                onChange={(event) => handleAddressChange('village', event.target.value)}
+                disabled={!addressForm.district || villages.length === 0}
+                required
+              >
+                <option value="">Pilih Desa/Kelurahan</option>
+                {villages.map(v => (
+                  <option key={v.id} value={v.name}>{v.name}</option>
+                ))}
+              </select>
+            </div>
             <Input
               id="new-address-postal"
               label="Kode Pos"
@@ -527,17 +800,18 @@ export default function CheckoutPage() {
           <div className="p-5 pb-2 border-b border-navy-100 bg-surface space-y-3">
             <h3 className="font-bold text-navy-900 mb-2">Rincian Pembayaran</h3>
             {[
-              { label: 'Subtotal (3 item)', value: formatRupiah(25700000) },
+              { label: `Subtotal (${checkoutItems.reduce((sum, item) => sum + item.quantity, 0)} item)`, value: formatRupiah(subtotal) },
               { label: 'Biaya Pengiriman', value: shippingFee ? formatRupiah(shippingFee) : 'Rp 0' },
-              { label: 'Asuransi (0.2%)',  value: formatRupiah(50200) },
             ].map((row) => (
               <div key={row.label} className="flex justify-between text-navy-600 text-sm">
                 <span>{row.label}</span><span>{row.value}</span>
               </div>
             ))}
-            <div className="flex justify-between text-green-600 font-medium text-sm">
-              <span>Potongan Voucher</span><span>-{formatRupiah(500000)}</span>
-            </div>
+            {discount > 0 ? (
+              <div className="flex justify-between text-green-600 font-medium text-sm">
+                <span>Potongan Voucher{checkoutVoucher ? ` (${checkoutVoucher.code})` : ''}</span><span>-{formatRupiah(discount)}</span>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -562,18 +836,22 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          <Link href="/payment" className="w-full sm:w-auto">
+          <div className="w-full sm:w-auto">
+            {checkoutError ? <p className="mb-2 text-sm font-semibold text-red-500">{checkoutError}</p> : null}
             <Button
+              type="button"
               variant="primary"
               size="lg"
               fullWidth
               disabled={!canPay}
+              isLoading={isSavingProfile}
+              onClick={handlePay}
               className={!canPay ? 'opacity-50 cursor-not-allowed' : ''}
             >
               <Lock className="w-4 h-4" />
               Bayar Sekarang
             </Button>
-          </Link>
+          </div>
         </div>
       </div>
 

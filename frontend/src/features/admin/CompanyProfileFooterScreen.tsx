@@ -3,9 +3,11 @@
 import { Building2, MapPin, Save, Share2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { adminSelectClassName } from '@/features/admin/admin-management-shared'
-import { CompanyProfileToast, TextareaField, useCompanyProfileToast, type PublishStatus } from '@/features/admin/company-profile-shared'
 import { IconActionButton } from '@/features/admin/admin-ui'
+import { fetchCompanyProfile, readProfileJson, readProfileText, saveCompanyProfileItems } from '@/features/admin/company-profile-api'
+import { CompanyProfileToast, TextareaField, useCompanyProfileToast, type PublishStatus } from '@/features/admin/company-profile-shared'
 import { AdminPageHeader, Badge, Button, Card, Input, Modal } from '@/shared/ui'
+import { formatLocalWhatsAppPhone, isValidWhatsAppPhone } from '@/core/lib/contact'
 
 interface SocialMediaRecord {
   id: string
@@ -14,6 +16,10 @@ interface SocialMediaRecord {
   link: string
 }
 
+type GeneralErrors = Partial<Record<'companyName' | 'companyDescription' | 'companyLogoPreview' | 'form', string>>
+type ContactErrors = Partial<Record<'address' | 'googleMapsLink' | 'whatsAppContact' | 'form', string>>
+type SocialErrors = Partial<Record<'link' | 'form', string>>
+
 const initialSocialMedia: SocialMediaRecord[] = [
   { id: 'social-instagram', name: 'Instagram', status: 'active', link: 'https://instagram.com/logammuliaantam' },
   { id: 'social-tiktok', name: 'TikTok', status: 'inactive', link: 'https://tiktok.com/@logammuliaantam' },
@@ -21,6 +27,16 @@ const initialSocialMedia: SocialMediaRecord[] = [
   { id: 'social-shopee', name: 'Shopee', status: 'active', link: 'https://shopee.co.id/logammuliaantam' },
   { id: 'social-tokopedia', name: 'Tokopedia', status: 'active', link: 'https://tokopedia.com/logammuliaantam' },
 ]
+
+const defaultFooter = {
+  companyName: 'Logam Mulia Antam',
+  companyDescription: 'Distributor resmi logam mulia Antam, menyediakan solusi investasi emas yang aman dan transparan.',
+  companyLogoName: 'logo-antam-gold.png',
+  companyLogoPreview: '/images/logo.png',
+  address: 'Unit Bisnis Pengolahan dan Pemurnian Logam Mulia Gedung Graha Dipta. Jalan Pemuda, No.1 Jatinegara Kaum, Pulo Gadung, Jakarta 13250',
+  googleMapsLink: 'https://maps.google.com/?q=Graha+Dipta+Pulogadung',
+  whatsAppContact: '081212345678',
+}
 
 function SectionCard({
   title,
@@ -59,28 +75,91 @@ function MetaRow({
   return (
     <div className="grid gap-1 sm:grid-cols-[170px_minmax(0,1fr)] sm:gap-3">
       <p className="text-sm text-navy-500">{label}</p>
-      <div className="text-sm text-navy-800">{value}</div>
+      <div className="break-words text-sm text-navy-800">{value}</div>
     </div>
   )
+}
+
+function FieldAlert({ message }: { message?: string }) {
+  if (!message) return null
+
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+      {message}
+    </div>
+  )
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+function normalizeUrl(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(normalizeUrl(value))
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 export default function CompanyProfileFooterScreen() {
   const { toast, showToast } = useCompanyProfileToast()
   const [isEditingGeneral, setIsEditingGeneral] = useState(false)
   const [isEditingContact, setIsEditingContact] = useState(false)
-  const [companyName, setCompanyName] = useState('Logam Mulia Antam')
-  const [companyDescription, setCompanyDescription] = useState(
-    'Distributor resmi logam mulia Antam, menyediakan solusi investasi emas yang aman dan transparan.',
-  )
-  const [companyLogoName, setCompanyLogoName] = useState('logo-antam-gold.png')
-  const [companyLogoPreview, setCompanyLogoPreview] = useState('/images/logo.png')
-  const [address, setAddress] = useState(
-    'Unit Bisnis Pengolahan dan Pemurnian Logam Mulia Gedung Graha Dipta. Jalan Pemuda, No.1 Jatinegara Kaum, Pulo Gadung, Jakarta 13250',
-  )
-  const [googleMapsLink, setGoogleMapsLink] = useState('https://maps.google.com/?q=Graha+Dipta+Pulogadung')
-  const [whatsAppContact, setWhatsAppContact] = useState('https://wa.me/6281212345678')
+  const [companyName, setCompanyName] = useState(defaultFooter.companyName)
+  const [companyDescription, setCompanyDescription] = useState(defaultFooter.companyDescription)
+  const [companyLogoName, setCompanyLogoName] = useState(defaultFooter.companyLogoName)
+  const [companyLogoPreview, setCompanyLogoPreview] = useState(defaultFooter.companyLogoPreview)
+  const [address, setAddress] = useState(defaultFooter.address)
+  const [googleMapsLink, setGoogleMapsLink] = useState(defaultFooter.googleMapsLink)
+  const [whatsAppContact, setWhatsAppContact] = useState(defaultFooter.whatsAppContact)
   const [socialMediaRows, setSocialMediaRows] = useState(initialSocialMedia)
   const [editingSocial, setEditingSocial] = useState<SocialMediaRecord | null>(null)
+  const [generalErrors, setGeneralErrors] = useState<GeneralErrors>({})
+  const [contactErrors, setContactErrors] = useState<ContactErrors>({})
+  const [socialErrors, setSocialErrors] = useState<SocialErrors>({})
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadFooterProfile() {
+      try {
+        const profile = await fetchCompanyProfile()
+        if (!isMounted) return
+
+        setCompanyName(readProfileText(profile, 'footer_company_name', defaultFooter.companyName))
+        setCompanyDescription(readProfileText(profile, 'footer_company_description', defaultFooter.companyDescription))
+        setCompanyLogoName(readProfileText(profile, 'footer_company_logo_name', defaultFooter.companyLogoName))
+        setCompanyLogoPreview(readProfileText(profile, 'footer_company_logo_preview', defaultFooter.companyLogoPreview))
+        setAddress(readProfileText(profile, 'footer_address', defaultFooter.address))
+        setGoogleMapsLink(readProfileText(profile, 'footer_google_maps_link', defaultFooter.googleMapsLink))
+        setWhatsAppContact(formatLocalWhatsAppPhone(readProfileText(profile, 'footer_whatsapp_contact', defaultFooter.whatsAppContact)))
+        setSocialMediaRows(readProfileJson(profile, 'footer_social_media', initialSocialMedia))
+      } catch (error) {
+        console.error('Error fetching footer company profile', error)
+        showToast('Gagal memuat informasi perusahaan.', 'error')
+      }
+    }
+
+    loadFooterProfile()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -95,7 +174,37 @@ export default function CompanyProfileFooterScreen() {
     [socialMediaRows],
   )
 
-  function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
+  function clearGeneralError(field: keyof GeneralErrors) {
+    setGeneralErrors((current) => {
+      if (!current[field] && !current.form) return current
+      const next = { ...current }
+      delete next[field]
+      delete next.form
+      return next
+    })
+  }
+
+  function clearContactError(field: keyof ContactErrors) {
+    setContactErrors((current) => {
+      if (!current[field] && !current.form) return current
+      const next = { ...current }
+      delete next[field]
+      delete next.form
+      return next
+    })
+  }
+
+  function clearSocialError(field: keyof SocialErrors) {
+    setSocialErrors((current) => {
+      if (!current[field] && !current.form) return current
+      const next = { ...current }
+      delete next[field]
+      delete next.form
+      return next
+    })
+  }
+
+  async function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -104,41 +213,124 @@ export default function CompanyProfileFooterScreen() {
     }
 
     setCompanyLogoName(file.name)
-    setCompanyLogoPreview(URL.createObjectURL(file))
+    setCompanyLogoPreview(await fileToDataUrl(file))
+    clearGeneralError('companyLogoPreview')
   }
 
-  function saveGeneralInformation() {
-    if (!companyName.trim() || !companyDescription.trim()) {
-      showToast('Lengkapi nama dan deskripsi perusahaan terlebih dahulu.', 'error')
-      return
+  function validateGeneralInformation() {
+    const nextErrors: GeneralErrors = {}
+
+    if (companyName.trim().length < 2) {
+      nextErrors.companyName = 'Nama perusahaan minimal 2 karakter.'
+    }
+    if (companyDescription.trim().length < 10) {
+      nextErrors.companyDescription = 'Deskripsi perusahaan minimal 10 karakter.'
+    }
+    if (!companyLogoPreview.trim()) {
+      nextErrors.companyLogoPreview = 'Logo perusahaan wajib dipilih.'
     }
 
-    setIsEditingGeneral(false)
-    showToast('Informasi umum berhasil diperbarui.', 'success')
+    setGeneralErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
-  function saveContactInformation() {
-    if (!address.trim() || !googleMapsLink.trim() || !whatsAppContact.trim()) {
-      showToast('Lengkapi alamat, link GMaps, dan kontak WhatsApp.', 'error')
-      return
+  function validateContactInformation() {
+    const nextErrors: ContactErrors = {}
+
+    if (address.trim().length < 5) {
+      nextErrors.address = 'Alamat minimal 5 karakter.'
+    }
+    if (!isValidHttpUrl(googleMapsLink)) {
+      nextErrors.googleMapsLink = 'Link GMaps harus berupa URL yang valid.'
+    }
+    if (!isValidWhatsAppPhone(whatsAppContact)) {
+      nextErrors.whatsAppContact = 'Masukkan nomor WhatsApp valid, contoh: 085812345678.'
     }
 
-    setIsEditingContact(false)
-    showToast('Alamat dan kontak berhasil diperbarui.', 'success')
+    setContactErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
-  function saveSocialMedia() {
-    if (!editingSocial) return
-    if (!editingSocial.link.trim()) {
-      showToast('Link media sosial wajib diisi.', 'error')
-      return
+  function validateSocialMedia() {
+    const nextErrors: SocialErrors = {}
+
+    if (!editingSocial?.link.trim()) {
+      nextErrors.link = 'Link media sosial wajib diisi.'
+    } else if (!isValidHttpUrl(editingSocial.link)) {
+      nextErrors.link = 'Link media sosial harus berupa URL yang valid.'
     }
 
-    setSocialMediaRows((current) =>
-      current.map((item) => (item.id === editingSocial.id ? editingSocial : item)),
-    )
-    setEditingSocial(null)
-    showToast('Media sosial berhasil diperbarui.', 'success')
+    setSocialErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  async function saveGeneralInformation() {
+    if (!validateGeneralInformation()) return
+
+    try {
+      await saveCompanyProfileItems([
+        { key: 'footer_company_name', value: companyName.trim(), type: 'text' },
+        { key: 'footer_company_description', value: companyDescription.trim(), type: 'text' },
+        { key: 'footer_company_logo_name', value: companyLogoName.trim() || 'logo-perusahaan', type: 'text' },
+        { key: 'footer_company_logo_preview', value: companyLogoPreview.trim(), type: 'image' },
+      ])
+      setCompanyName(companyName.trim())
+      setCompanyDescription(companyDescription.trim())
+      setCompanyLogoName(companyLogoName.trim() || 'logo-perusahaan')
+      setIsEditingGeneral(false)
+      setGeneralErrors({})
+      showToast('Informasi umum berhasil diperbarui.', 'success')
+    } catch (error) {
+      console.error('Error saving general company profile', error)
+      setGeneralErrors({ form: 'Gagal menyimpan informasi umum. Periksa data lalu coba lagi.' })
+    }
+  }
+
+  async function saveContactInformation() {
+    if (!validateContactInformation()) return
+
+    const normalizedGoogleMapsLink = normalizeUrl(googleMapsLink)
+    const normalizedWhatsAppContact = formatLocalWhatsAppPhone(whatsAppContact)
+
+    try {
+      await saveCompanyProfileItems([
+        { key: 'footer_address', value: address.trim(), type: 'text' },
+        { key: 'footer_google_maps_link', value: normalizedGoogleMapsLink, type: 'text' },
+        { key: 'footer_whatsapp_contact', value: normalizedWhatsAppContact, type: 'text' },
+      ])
+      setAddress(address.trim())
+      setGoogleMapsLink(normalizedGoogleMapsLink)
+      setWhatsAppContact(normalizedWhatsAppContact)
+      setIsEditingContact(false)
+      setContactErrors({})
+      showToast('Alamat dan kontak berhasil diperbarui.', 'success')
+    } catch (error) {
+      console.error('Error saving contact company profile', error)
+      setContactErrors({ form: 'Gagal menyimpan alamat dan kontak. Periksa data lalu coba lagi.' })
+    }
+  }
+
+  async function saveSocialMedia() {
+    if (!editingSocial || !validateSocialMedia()) return
+
+    const normalizedSocial: SocialMediaRecord = {
+      ...editingSocial,
+      link: normalizeUrl(editingSocial.link),
+    }
+    const nextRows = socialMediaRows.map((item) => (item.id === normalizedSocial.id ? normalizedSocial : item))
+
+    try {
+      await saveCompanyProfileItems([
+        { key: 'footer_social_media', value: JSON.stringify(nextRows), type: 'list' },
+      ])
+      setSocialMediaRows(nextRows)
+      setEditingSocial(null)
+      setSocialErrors({})
+      showToast('Media sosial berhasil diperbarui.', 'success')
+    } catch (error) {
+      console.error('Error saving social media company profile', error)
+      setSocialErrors({ form: 'Gagal menyimpan media sosial. Periksa data lalu coba lagi.' })
+    }
   }
 
   return (
@@ -157,7 +349,14 @@ export default function CompanyProfileFooterScreen() {
           actions={
             isEditingGeneral ? (
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setIsEditingGeneral(false)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsEditingGeneral(false)
+                    setGeneralErrors({})
+                  }}
+                >
                   Batal
                 </Button>
                 <Button size="sm" onClick={saveGeneralInformation}>
@@ -166,62 +365,80 @@ export default function CompanyProfileFooterScreen() {
                 </Button>
               </div>
             ) : (
-              <IconActionButton label="Edit informasi umum" tone="edit" onClick={() => setIsEditingGeneral(true)} />
+              <IconActionButton
+                label="Edit informasi umum"
+                tone="edit"
+                onClick={() => {
+                  setGeneralErrors({})
+                  setIsEditingGeneral(true)
+                }}
+              />
             )
           }
         >
-            {isEditingGeneral ? (
-              <div className="space-y-4">
-                <Input
-                  id="company-name"
-                  label="Nama perusahaan"
-                  value={companyName}
-                  onChange={(event) => setCompanyName(event.target.value)}
-                />
+          {isEditingGeneral ? (
+            <div className="space-y-4">
+              <FieldAlert message={generalErrors.form} />
 
-                <TextareaField
-                  label="Deskripsi perusahaan"
-                  value={companyDescription}
-                  onChange={setCompanyDescription}
-                  rows={4}
-                />
+              <Input
+                id="company-name"
+                label="Nama perusahaan"
+                value={companyName}
+                error={generalErrors.companyName}
+                onChange={(event) => {
+                  setCompanyName(event.target.value)
+                  clearGeneralError('companyName')
+                }}
+              />
 
-                <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
-                  <span>Logo perusahaan</span>
-                  <label className="flex min-h-28 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-navy-200 bg-navy-50 px-4 py-6 text-center transition-colors hover:border-gold-300 hover:bg-gold-50/40">
-                    <input type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-navy-900">{companyLogoName || 'Pilih logo perusahaan'}</p>
-                      <p className="text-xs text-navy-500">Klik untuk upload atau ganti logo</p>
-                    </div>
-                  </label>
+              <TextareaField
+                label="Deskripsi perusahaan"
+                value={companyDescription}
+                error={generalErrors.companyDescription}
+                onChange={(value) => {
+                  setCompanyDescription(value)
+                  clearGeneralError('companyDescription')
+                }}
+                rows={4}
+              />
+
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
+                <span>Logo perusahaan</span>
+                <label className={`flex min-h-28 cursor-pointer items-center justify-center rounded-2xl border border-dashed bg-navy-50 px-4 py-6 text-center transition-colors hover:border-gold-300 hover:bg-gold-50/40 ${generalErrors.companyLogoPreview ? 'border-red-400' : 'border-navy-200'}`}>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-navy-900">{companyLogoName || 'Pilih logo perusahaan'}</p>
+                    <p className="text-xs text-navy-500">Klik untuk upload atau ganti logo</p>
+                  </div>
                 </label>
+                {generalErrors.companyLogoPreview ? <p className="text-xs text-red-500">{generalErrors.companyLogoPreview}</p> : null}
+              </label>
 
-                {companyLogoPreview && (
-                  <Card padding="sm" className="border-navy-100">
-                    <div className="space-y-3">
-                      <p className="text-sm font-semibold text-navy-900">Preview logo</p>
-                      <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-navy-100 bg-navy-50">
-                        <img src={companyLogoPreview} alt={companyName} className="h-full w-full object-contain" />
-                      </div>
-                    </div>
-                  </Card>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <MetaRow label="Nama perusahaan" value={companyName} />
-                <MetaRow label="Deskripsi perusahaan" value={companyDescription} />
-                <MetaRow
-                  label="Logo perusahaan"
-                  value={
-                    <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-navy-100 bg-navy-50">
+              {companyLogoPreview && (
+                <Card padding="sm" className="border-navy-100">
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-navy-900">Preview logo</p>
+                    <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-navy-100 bg-navy-50">
                       <img src={companyLogoPreview} alt={companyName} className="h-full w-full object-contain" />
                     </div>
-                  }
-                />
-              </div>
-            )}
+                  </div>
+                </Card>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <MetaRow label="Nama perusahaan" value={companyName} />
+              <MetaRow label="Deskripsi perusahaan" value={companyDescription} />
+              <MetaRow
+                label="Logo perusahaan"
+                value={
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-navy-100 bg-navy-50">
+                    <img src={companyLogoPreview} alt={companyName} className="h-full w-full object-contain" />
+                  </div>
+                }
+              />
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard
@@ -230,7 +447,14 @@ export default function CompanyProfileFooterScreen() {
           actions={
             isEditingContact ? (
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setIsEditingContact(false)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsEditingContact(false)
+                    setContactErrors({})
+                  }}
+                >
                   Batal
                 </Button>
                 <Button size="sm" onClick={saveContactInformation}>
@@ -239,95 +463,142 @@ export default function CompanyProfileFooterScreen() {
                 </Button>
               </div>
             ) : (
-              <IconActionButton label="Edit alamat dan kontak" tone="edit" onClick={() => setIsEditingContact(true)} />
+              <IconActionButton
+                label="Edit alamat dan kontak"
+                tone="edit"
+                onClick={() => {
+                  setContactErrors({})
+                  setIsEditingContact(true)
+                }}
+              />
             )
           }
         >
-            {isEditingContact ? (
-              <div className="space-y-4">
-                <TextareaField
-                  label="Alamat"
-                  value={address}
-                  onChange={setAddress}
-                  rows={4}
-                />
-                <Input
-                  id="company-gmaps"
-                  label="Link GMaps"
-                  value={googleMapsLink}
-                  onChange={(event) => setGoogleMapsLink(event.target.value)}
-                />
-                <Input
-                  id="company-whatsapp"
-                  label="Kontak WhatsApp admin/CS"
-                  value={whatsAppContact}
-                  onChange={(event) => setWhatsAppContact(event.target.value)}
-                />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <MetaRow label="Alamat" value={address} />
-                <MetaRow label="Link GMaps" value={googleMapsLink} />
-                <MetaRow label="Kontak WhatsApp admin/CS" value={whatsAppContact} />
-              </div>
-            )}
+          {isEditingContact ? (
+            <div className="space-y-4">
+              <FieldAlert message={contactErrors.form} />
+
+              <TextareaField
+                label="Alamat"
+                value={address}
+                error={contactErrors.address}
+                onChange={(value) => {
+                  setAddress(value)
+                  clearContactError('address')
+                }}
+                rows={4}
+              />
+              <Input
+                id="company-gmaps"
+                label="Link GMaps"
+                value={googleMapsLink}
+                error={contactErrors.googleMapsLink}
+                onChange={(event) => {
+                  setGoogleMapsLink(event.target.value)
+                  clearContactError('googleMapsLink')
+                }}
+              />
+              <Input
+                id="company-whatsapp"
+                label="Kontak WhatsApp admin/CS"
+                placeholder="085812345678"
+                type="tel"
+                value={whatsAppContact}
+                error={contactErrors.whatsAppContact}
+                onChange={(event) => {
+                  setWhatsAppContact(event.target.value)
+                  clearContactError('whatsAppContact')
+                }}
+              />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <MetaRow label="Alamat" value={address} />
+              <MetaRow label="Link GMaps" value={googleMapsLink} />
+              <MetaRow label="Kontak WhatsApp admin/CS" value={whatsAppContact} />
+            </div>
+          )}
         </SectionCard>
 
         <SectionCard title="Media Sosial" icon={<Share2 className="h-5 w-5" />}>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-navy-500">Total aktif: {activeSocialCount} dari {socialMediaRows.length}</p>
-              </div>
-
-              <div className="hidden overflow-x-auto rounded-2xl border border-navy-100 bg-white md:block">
-                <table className="w-full min-w-[680px] divide-y divide-navy-100">
-                  <thead className="bg-navy-50/80">
-                    <tr>
-                      <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Nama Sosmed</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Status</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Link</th>
-                      <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-navy-100">
-                    {socialMediaRows.map((item) => (
-                      <tr key={item.id} className="hover:bg-gold-50/40">
-                        <td className="px-5 py-4 text-sm font-semibold text-navy-900">{item.name}</td>
-                        <td className="px-5 py-4"><Badge variant={item.status} /></td>
-                        <td className="px-5 py-4 text-sm text-navy-700">{item.link}</td>
-                        <td className="px-5 py-4">
-                          <IconActionButton label={`Edit ${item.name}`} tone="edit" onClick={() => setEditingSocial(item)} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="space-y-3 md:hidden">
-                {socialMediaRows.map((item) => (
-                  <Card key={item.id} padding="sm" className="border-navy-100">
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-navy-900">{item.name}</p>
-                          <p className="mt-1 text-sm text-navy-500">{item.link}</p>
-                        </div>
-                        <Badge variant={item.status} />
-                      </div>
-                      <div className="flex justify-end">
-                        <IconActionButton label={`Edit ${item.name}`} tone="edit" onClick={() => setEditingSocial(item)} />
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-navy-500">Total aktif: {activeSocialCount} dari {socialMediaRows.length}</p>
             </div>
+
+            <div className="hidden overflow-x-auto rounded-2xl border border-navy-100 bg-white md:block">
+              <table className="w-full min-w-[680px] divide-y divide-navy-100">
+                <thead className="bg-navy-50/80">
+                  <tr>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Nama Sosmed</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Status</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Link</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-[0.16em] text-navy-500">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-navy-100">
+                  {socialMediaRows.map((item) => (
+                    <tr key={item.id} className="hover:bg-gold-50/40">
+                      <td className="px-5 py-4 text-sm font-semibold text-navy-900">{item.name}</td>
+                      <td className="px-5 py-4"><Badge variant={item.status} /></td>
+                      <td className="max-w-[360px] break-words px-5 py-4 text-sm text-navy-700">{item.link}</td>
+                      <td className="px-5 py-4">
+                        <IconActionButton
+                          label={`Edit ${item.name}`}
+                          tone="edit"
+                          onClick={() => {
+                            setSocialErrors({})
+                            setEditingSocial(item)
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 md:hidden">
+              {socialMediaRows.map((item) => (
+                <Card key={item.id} padding="sm" className="border-navy-100">
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-navy-900">{item.name}</p>
+                        <p className="mt-1 break-words text-sm text-navy-500">{item.link}</p>
+                      </div>
+                      <Badge variant={item.status} />
+                    </div>
+                    <div className="flex justify-end">
+                      <IconActionButton
+                        label={`Edit ${item.name}`}
+                        tone="edit"
+                        onClick={() => {
+                          setSocialErrors({})
+                          setEditingSocial(item)
+                        }}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
         </SectionCard>
       </div>
 
-      <Modal isOpen={editingSocial !== null} onClose={() => setEditingSocial(null)} title="Edit Media Sosial" size="md">
+      <Modal
+        isOpen={editingSocial !== null}
+        onClose={() => {
+          setEditingSocial(null)
+          setSocialErrors({})
+        }}
+        title="Edit Media Sosial"
+        size="md"
+      >
         <div className="space-y-4">
+          <FieldAlert message={socialErrors.form} />
+
           <Input
             id="social-name"
             label="Nama sosmed"
@@ -355,13 +626,23 @@ export default function CompanyProfileFooterScreen() {
             id="social-link"
             label="Link"
             value={editingSocial?.link ?? ''}
-            onChange={(event) =>
+            error={socialErrors.link}
+            onChange={(event) => {
               setEditingSocial((current) => current ? { ...current, link: event.target.value } : current)
-            }
+              clearSocialError('link')
+            }}
           />
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setEditingSocial(null)}>Batal</Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEditingSocial(null)
+                setSocialErrors({})
+              }}
+            >
+              Batal
+            </Button>
             <Button onClick={saveSocialMedia}>
               <Save className="h-4 w-4" />
               Simpan

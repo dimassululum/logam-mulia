@@ -9,7 +9,7 @@ export interface Product {
   totalPrice: number
   stock: number
   imageUrl: string
-  category: 'batangan' | 'perhiasan' | 'koin'
+  category: string
   purity: string // e.g. "99.99%"
   createdAt: string
   updatedAt: string
@@ -24,11 +24,13 @@ export interface CartItem {
 // ─── Order ───────────────────────────────────────────────────────────────────
 export type OrderStatus =
   | 'pending'
+  | 'success'
   | 'paid'
   | 'processing'
   | 'shipped'
   | 'delivered'
   | 'completed'
+  | 'canceled'
   | 'cancelled'
   | 'refund'
 

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink, MapPinned } from 'lucide-react'
+import { apiClient } from '@/core/lib/api-client'
 import {
-  adminBoutiqueRecords,
   type AdminBoutiqueRecord,
   type CatalogStatus,
 } from '@/features/admin/admin-management-data'
@@ -23,6 +23,9 @@ import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Card, Inpu
 
 type BoutiqueSortKey = 'city'
 
+type BoutiqueFormField = 'name' | 'city' | 'address' | 'contactPhone' | 'googleMapsUrl' | 'form'
+type BoutiqueFormErrors = Partial<Record<BoutiqueFormField, string>>
+
 const EMPTY_FORM = {
   id: '',
   name: '',
@@ -33,8 +36,46 @@ const EMPTY_FORM = {
   status: 'active' as CatalogStatus,
 }
 
+function generateSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function normalizeUrl(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
+function isValidUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function mapBoutique(boutique: any): AdminBoutiqueRecord {
+  return {
+    id: boutique.id,
+    name: boutique.name,
+    city: boutique.city,
+    address: boutique.address,
+    contactPhone: boutique.contactPhone,
+    googleMapsUrl: boutique.googleMapsUrl,
+    status: boutique.isActive ? 'active' : 'inactive',
+    updatedAt: boutique.updatedAt,
+  }
+}
+
 export default function BoutiqueManagementScreen() {
-  const [boutiques, setBoutiques] = useState(adminBoutiqueRecords)
+  const [boutiques, setBoutiques] = useState<AdminBoutiqueRecord[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
@@ -42,9 +83,28 @@ export default function BoutiqueManagementScreen() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [formState, setFormState] = useState(EMPTY_FORM)
+  const [formErrors, setFormErrors] = useState<BoutiqueFormErrors>({})
+  const [isSaving, setIsSaving] = useState(false)
   const [detailTarget, setDetailTarget] = useState<AdminBoutiqueRecord | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AdminBoutiqueRecord | null>(null)
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+
+  const fetchBoutiques = async () => {
+    setIsLoading(true)
+    try {
+      const { data } = await apiClient.get('/boutiques')
+      setBoutiques(data.data.map(mapBoutique))
+    } catch (error) {
+      console.error('Error fetching boutiques', error)
+      showToast('Gagal memuat data butik.', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchBoutiques()
+  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -78,8 +138,76 @@ export default function BoutiqueManagementScreen() {
     setToast({ message, tone })
   }
 
+  function updateFormField<Field extends keyof typeof EMPTY_FORM>(field: Field, value: (typeof EMPTY_FORM)[Field]) {
+    setFormState((current) => ({ ...current, [field]: value }))
+    setFormErrors((current) => {
+      if (!current[field as BoutiqueFormField] && !current.form) return current
+      const next = { ...current }
+      delete next[field as BoutiqueFormField]
+      delete next.form
+      return next
+    })
+  }
+
+  function validateForm() {
+    const nextErrors: BoutiqueFormErrors = {}
+    const mapsUrl = normalizeUrl(formState.googleMapsUrl)
+
+    if (formState.name.trim().length < 2) {
+      nextErrors.name = 'Nama butik minimal 2 karakter.'
+    }
+    if (formState.city.trim().length < 2) {
+      nextErrors.city = 'Kota minimal 2 karakter.'
+    }
+    if (formState.address.trim().length < 5) {
+      nextErrors.address = 'Alamat minimal 5 karakter.'
+    }
+    if (formState.contactPhone.trim().length < 5) {
+      nextErrors.contactPhone = 'Nomor kontak minimal 5 karakter.'
+    }
+    if (!mapsUrl) {
+      nextErrors.googleMapsUrl = 'Link Google Maps wajib diisi.'
+    } else if (!isValidUrl(mapsUrl)) {
+      nextErrors.googleMapsUrl = 'Masukkan URL valid, contoh: https://maps.google.com/?q=Butik.'
+    }
+    if (!generateSlug(`${formState.name}-${formState.city}`)) {
+      nextErrors.name = nextErrors.name ?? 'Nama dan kota harus membentuk slug yang valid.'
+      nextErrors.city = nextErrors.city ?? 'Nama dan kota harus membentuk slug yang valid.'
+    }
+
+    setFormErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  function applyApiErrors(error: any) {
+    const errors = error?.response?.data?.errors
+    const message = error?.response?.data?.message
+
+    if (Array.isArray(errors) && errors.length > 0) {
+      const nextErrors: BoutiqueFormErrors = {}
+      errors.forEach((item: { field?: string; message?: string }) => {
+        const field = item.field as BoutiqueFormField | undefined
+        if (field && ['name', 'city', 'address', 'contactPhone', 'googleMapsUrl'].includes(field)) {
+          nextErrors[field] = item.message || 'Format field belum valid.'
+        }
+      })
+      if (Object.keys(nextErrors).length > 0) {
+        setFormErrors(nextErrors)
+        return
+      }
+    }
+
+    if (message?.toLowerCase().includes('slug')) {
+      setFormErrors({ name: 'Kombinasi nama dan kota sudah dipakai.', city: 'Gunakan kota atau nama butik yang berbeda.' })
+      return
+    }
+
+    setFormErrors({ form: message || 'Gagal menyimpan butik. Periksa data lalu coba lagi.' })
+  }
+
   function openCreateModal() {
     setFormState(EMPTY_FORM)
+    setFormErrors({})
     setIsFormOpen(true)
   }
 
@@ -93,47 +221,58 @@ export default function BoutiqueManagementScreen() {
       googleMapsUrl: boutique.googleMapsUrl,
       status: boutique.status,
     })
+    setFormErrors({})
     setIsFormOpen(true)
   }
 
-  function saveBoutique() {
-    if (
-      !formState.name.trim() ||
-      !formState.city.trim() ||
-      !formState.address.trim() ||
-      !formState.contactPhone.trim() ||
-      !formState.googleMapsUrl.trim()
-    ) {
-      showToast('Nama butik, kota, alamat, kontak, dan link Google Maps wajib diisi.', 'error')
-      return
-    }
+  async function saveBoutique() {
+    if (!validateForm()) return
 
-    const existing = boutiques.find((boutique) => boutique.id === formState.id)
-    const nextBoutique: AdminBoutiqueRecord = {
-      id: formState.id || `BTQ-${String(boutiques.length + 1).padStart(3, '0')}`,
+    const payload = {
       name: formState.name.trim(),
+      slug: generateSlug(`${formState.name}-${formState.city}`),
       city: formState.city.trim(),
       address: formState.address.trim(),
       contactPhone: formState.contactPhone.trim(),
-      googleMapsUrl: formState.googleMapsUrl.trim(),
-      status: formState.status,
-      updatedAt: existing?.updatedAt ?? new Date().toISOString(),
+      googleMapsUrl: normalizeUrl(formState.googleMapsUrl),
+      isActive: formState.status === 'active',
     }
 
-    setBoutiques((current) => {
-      const exists = current.some((boutique) => boutique.id === nextBoutique.id)
-      if (!exists) return [nextBoutique, ...current]
-      return current.map((boutique) => (boutique.id === nextBoutique.id ? nextBoutique : boutique))
-    })
-    setIsFormOpen(false)
-    showToast('Butik berhasil disimpan.', 'success')
+    if (!payload.slug) {
+      setFormErrors({ form: 'Slug tidak valid. Ubah nama atau kota butik.' })
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      if (formState.id) {
+        await apiClient.put(`/boutiques/${formState.id}`, payload)
+      } else {
+        await apiClient.post('/boutiques', payload)
+      }
+      setIsFormOpen(false)
+      await fetchBoutiques()
+      showToast('Butik berhasil disimpan.', 'success')
+    } catch (error) {
+      console.error('Error saving boutique', error)
+      applyApiErrors(error)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  function deleteBoutique() {
+  async function deleteBoutique() {
     if (!deleteTarget) return
-    setBoutiques((current) => current.filter((boutique) => boutique.id !== deleteTarget.id))
-    setDeleteTarget(null)
-    showToast('Butik berhasil dihapus.', 'success')
+
+    try {
+      await apiClient.delete(`/boutiques/${deleteTarget.id}`)
+      setBoutiques((current) => current.filter((boutique) => boutique.id !== deleteTarget.id))
+      setDeleteTarget(null)
+      showToast('Butik berhasil dihapus.', 'success')
+    } catch (error) {
+      console.error('Error deleting boutique', error)
+      showToast('Gagal menghapus butik.', 'error')
+    }
   }
 
   const columns: AdminTableColumn[] = [
@@ -240,7 +379,12 @@ export default function BoutiqueManagementScreen() {
         <AdminTable
           columns={columns}
           rows={rows}
-          emptyState={<AdminEmptyState title="Butik tidak ditemukan" description="Ubah pencarian atau filter." />}
+          emptyState={
+            <AdminEmptyState
+              title={isLoading ? 'Memuat butik' : 'Butik tidak ditemukan'}
+              description={isLoading ? 'Mengambil data dari backend.' : 'Ubah pencarian atau filter.'}
+            />
+          }
         />
       </div>
 
@@ -259,23 +403,34 @@ export default function BoutiqueManagementScreen() {
 
       <Modal
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={() => {
+          setIsFormOpen(false)
+          setFormErrors({})
+        }}
         title={formState.id ? 'Edit Butik' : 'Tambah Butik'}
         size="md"
       >
         <div className="space-y-4">
+          {formErrors.form ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              {formErrors.form}
+            </div>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2">
             <Input
               id="boutique-name"
               label="Nama butik"
               value={formState.name}
-              onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
+              error={formErrors.name}
+              onChange={(event) => updateFormField('name', event.target.value)}
             />
             <Input
               id="boutique-city"
               label="Kota"
               value={formState.city}
-              onChange={(event) => setFormState((current) => ({ ...current, city: event.target.value }))}
+              error={formErrors.city}
+              onChange={(event) => updateFormField('city', event.target.value)}
             />
           </div>
 
@@ -283,41 +438,54 @@ export default function BoutiqueManagementScreen() {
             Alamat
             <textarea
               value={formState.address}
-              onChange={(event) => setFormState((current) => ({ ...current, address: event.target.value }))}
+              onChange={(event) => updateFormField('address', event.target.value)}
               rows={4}
-              className="w-full rounded-2xl border border-navy-200 bg-white px-4 py-3 text-sm text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-400/30"
+              className={`w-full rounded-2xl border bg-white px-4 py-3 text-sm text-navy-700 outline-none transition focus:ring-2 ${
+                formErrors.address
+                  ? 'border-red-400 focus:border-red-400 focus:ring-red-400/30'
+                  : 'border-navy-200 focus:border-gold-400 focus:ring-gold-400/30'
+              }`}
             />
+            {formErrors.address ? <p className="text-xs text-red-500">{formErrors.address}</p> : null}
           </label>
 
           <Input
             id="boutique-contact-phone"
             label="Nomor kontak"
             value={formState.contactPhone}
-            onChange={(event) => setFormState((current) => ({ ...current, contactPhone: event.target.value }))}
+            error={formErrors.contactPhone}
+            onChange={(event) => updateFormField('contactPhone', event.target.value)}
           />
 
           <Input
             id="boutique-maps-url"
             label="Link Google Maps"
             value={formState.googleMapsUrl}
-            onChange={(event) => setFormState((current) => ({ ...current, googleMapsUrl: event.target.value }))}
+            hint="Bisa pakai maps.google.com/... atau URL lengkap https://..."
+            error={formErrors.googleMapsUrl}
+            onChange={(event) => updateFormField('googleMapsUrl', event.target.value)}
           />
 
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
-            Status
-            <select
-              value={formState.status}
-              onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as CatalogStatus }))}
-              className={adminSelectClassName}
-            >
-              <option value="active">Aktif</option>
-              <option value="inactive">Nonaktif</option>
-            </select>
-          </label>
+          {formState.id ? (
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
+              Status
+              <select
+                value={formState.status}
+                onChange={(event) => updateFormField('status', event.target.value as CatalogStatus)}
+                className={adminSelectClassName}
+              >
+                <option value="active">Aktif</option>
+                <option value="inactive">Nonaktif</option>
+              </select>
+            </label>
+          ) : null}
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Batal</Button>
-            <Button onClick={saveBoutique}>Simpan</Button>
+            <Button variant="ghost" onClick={() => {
+              setIsFormOpen(false)
+              setFormErrors({})
+            }}>Batal</Button>
+            <Button onClick={saveBoutique} isLoading={isSaving}>Simpan</Button>
           </div>
         </div>
       </Modal>

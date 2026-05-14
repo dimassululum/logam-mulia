@@ -1,24 +1,25 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowLeft, Check, Pencil, Plus, Save, TicketPercent } from 'lucide-react'
 import { cn, formatRupiah } from '@/core/lib/utils'
-import {
-  adminProductRecords,
-  adminVoucherRecords,
-  formatDateRange,
-  type AdminProductRecord,
-  type AdminVoucherRecord,
-  type DiscountType,
-  type VoucherStatus,
-} from '@/features/admin/admin-management-data'
 import { SelectField } from '@/features/admin/company-profile-shared'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
+import {
+  createAdminVoucher,
+  fetchAdminVoucher,
+  fetchVoucherProductOptions,
+  updateAdminVoucher,
+  type AdminVoucher,
+  type AdminVoucherDiscountType,
+  type AdminVoucherProductOption,
+} from '@/features/admin/voucher-api'
 import { AdminPageHeader, Badge, Button, Card, Input, Modal } from '@/shared/ui'
 
 type VoucherScreenMode = 'create' | 'detail' | 'edit'
-type FormDiscountType = DiscountType | ''
+type FormDiscountType = AdminVoucherDiscountType | ''
 
 interface VoucherFormScreenProps {
   mode: VoucherScreenMode
@@ -27,45 +28,66 @@ interface VoucherFormScreenProps {
 
 interface VoucherFormState {
   code: string
-  title: string
   discountType: FormDiscountType
-  amount: string
+  discountValue: string
   usageLimit: string
-  startDate: string
-  endDate: string
+  isActive: boolean
   selectedProductIds: string[]
-  status: VoucherStatus
+}
+
+const emptyState: VoucherFormState = {
+  code: '',
+  discountType: '',
+  discountValue: '',
+  usageLimit: '',
+  isActive: true,
+  selectedProductIds: [],
 }
 
 function generateVoucherCode() {
   return `GOLD${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 }
 
-function formatDiscountValue(type: DiscountType, amount: number) {
-  return type === 'percentage' ? `${amount}%` : formatRupiah(amount)
+function formatDiscountValue(type: FormDiscountType, amount: string) {
+  if (!type) return '-'
+  const value = Number(amount || '0')
+  return type === 'PERCENTAGE' ? `${value}%` : formatRupiah(value)
 }
 
-function buildInitialState(voucher?: AdminVoucherRecord): VoucherFormState {
+function buildInitialState(voucher?: AdminVoucher | null): VoucherFormState {
+  if (!voucher) {
+    return {
+      ...emptyState,
+      code: generateVoucherCode(),
+    }
+  }
+
   return {
-    code: voucher?.code ?? generateVoucherCode(),
-    title: voucher?.title ?? '',
-    discountType: voucher?.discountType ?? '',
-    amount: voucher ? String(voucher.amount) : '',
-    usageLimit: voucher ? String(voucher.usageLimit) : '',
-    startDate: voucher?.startDate.slice(0, 10) ?? '',
-    endDate: voucher?.endDate.slice(0, 10) ?? '',
-    selectedProductIds: voucher?.productIds ?? [],
-    status: voucher?.status ?? 'inactive',
+    code: voucher.code,
+    discountType: voucher.discountType,
+    discountValue: String(voucher.discountValue),
+    usageLimit: voucher.usageLimit === null ? '' : String(voucher.usageLimit),
+    isActive: voucher.isActive,
+    selectedProductIds: voucher.products.map((product) => product.id),
   }
 }
 
-function MetaRow({
-  label,
-  value,
-}: {
-  label: string
-  value: React.ReactNode
-}) {
+function mergeProductOptions(
+  options: AdminVoucherProductOption[],
+  selected: AdminVoucherProductOption[],
+) {
+  const map = new Map<string, AdminVoucherProductOption>()
+  options.forEach((product) => map.set(product.id, product))
+  selected.forEach((product) => map.set(product.id, product))
+  return Array.from(map.values()).sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function numberOrZero(value: string) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+function MetaRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid gap-1 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-3">
       <p className="text-sm text-navy-500">{label}</p>
@@ -74,15 +96,7 @@ function MetaRow({
   )
 }
 
-function SectionCard({
-  title,
-  actions,
-  children,
-}: {
-  title: string
-  actions?: React.ReactNode
-  children: React.ReactNode
-}) {
+function SectionCard({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <Card padding="md" className="border-navy-100 shadow-elevation-low">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -95,13 +109,50 @@ function SectionCard({
 }
 
 export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreenProps) {
-  const voucher = useMemo(
-    () => (voucherId ? adminVoucherRecords.find((item) => item.id === voucherId) : undefined),
-    [voucherId],
-  )
-  const [formState, setFormState] = useState<VoucherFormState>(buildInitialState(voucher))
+  const router = useRouter()
+  const [voucher, setVoucher] = useState<AdminVoucher | null>(null)
+  const [productOptions, setProductOptions] = useState<AdminVoucherProductOption[]>([])
+  const [formState, setFormState] = useState<VoucherFormState>(buildInitialState())
   const [isProductModalOpen, setIsProductModalOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(mode !== 'create')
+  const [isSaving, setIsSaving] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+
+    async function loadData() {
+      setIsLoading(true)
+      setLoadError('')
+
+      try {
+        const [products, currentVoucher] = await Promise.all([
+          fetchVoucherProductOptions(),
+          voucherId ? fetchAdminVoucher(voucherId) : Promise.resolve(null),
+        ])
+
+        if (!alive) return
+
+        setVoucher(currentVoucher)
+        setProductOptions(mergeProductOptions(products, currentVoucher?.products ?? []))
+        setFormState(buildInitialState(currentVoucher))
+
+        if (voucherId && !currentVoucher) {
+          setLoadError('Voucher tidak ditemukan.')
+        }
+      } catch {
+        if (alive) setLoadError('Gagal memuat data voucher.')
+      } finally {
+        if (alive) setIsLoading(false)
+      }
+    }
+
+    loadData()
+    return () => {
+      alive = false
+    }
+  }, [voucherId])
 
   useEffect(() => {
     if (!toast) return
@@ -109,21 +160,11 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
     return () => window.clearTimeout(timeout)
   }, [toast])
 
-  useEffect(() => {
-    setFormState(buildInitialState(voucher))
-  }, [voucher])
-
   const isReadOnly = mode === 'detail'
-  const canEditExisting = voucher ? voucher.status !== 'active' : true
-
   const selectedProducts = useMemo(
-    () => adminProductRecords.filter((product) => formState.selectedProductIds.includes(product.id)),
-    [formState.selectedProductIds],
+    () => productOptions.filter((product) => formState.selectedProductIds.includes(product.id)),
+    [formState.selectedProductIds, productOptions],
   )
-
-  function showToast(message: string, tone: ToastTone) {
-    setToast({ message, tone })
-  }
 
   function updateField<Key extends keyof VoucherFormState>(key: Key, value: VoucherFormState[Key]) {
     setFormState((current) => ({ ...current, [key]: value }))
@@ -138,42 +179,58 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
     }))
   }
 
-  function saveVoucher() {
-    if (!formState.code.trim() || !formState.title.trim()) {
-      showToast('Kode dan judul wajib diisi.', 'error')
+  function digitsOnly(value: string) {
+    return value.replace(/[^\d]/g, '')
+  }
+
+  async function saveVoucher() {
+    const discountValue = numberOrZero(formState.discountValue)
+    const usageLimit = formState.usageLimit.trim() ? numberOrZero(formState.usageLimit) : null
+
+    if (!formState.code.trim()) {
+      setToast({ message: 'Kode voucher wajib diisi.', tone: 'error' })
       return
     }
     if (!formState.discountType) {
-      showToast('Tipe diskon wajib dipilih.', 'error')
+      setToast({ message: 'Tipe diskon wajib dipilih.', tone: 'error' })
       return
     }
-    if (!formState.amount.trim()) {
-      showToast('Nilai diskon wajib diisi.', 'error')
-      return
-    }
-    if (!formState.usageLimit.trim()) {
-      showToast('Kuota wajib diisi.', 'error')
-      return
-    }
-    if (!formState.startDate || !formState.endDate) {
-      showToast('Tanggal mulai dan selesai wajib diisi.', 'error')
+    if (discountValue <= 0) {
+      setToast({ message: 'Nilai diskon wajib lebih dari 0.', tone: 'error' })
       return
     }
     if (!formState.selectedProductIds.length) {
-      showToast('Pilih minimal satu produk.', 'error')
+      setToast({ message: 'Pilih minimal satu produk.', tone: 'error' })
       return
     }
 
-    showToast(mode === 'create' ? 'Voucher baru berhasil disimpan.' : 'Voucher berhasil diperbarui.', 'success')
-  }
+    setIsSaving(true)
+    try {
+      const payload = {
+        code: formState.code.trim().toUpperCase(),
+        discountType: formState.discountType,
+        discountValue,
+        minPurchase: 0,
+        maxDiscount: null,
+        usageLimit,
+        perUserLimit: 1,
+        isActive: mode === 'create' ? true : formState.isActive,
+        startsAt: null,
+        expiresAt: null,
+        productIds: formState.selectedProductIds,
+      }
 
-  function toggleStatus() {
-    if (formState.status === 'expired') {
-      showToast('Voucher kedaluwarsa tidak bisa diaktifkan kembali dari halaman ini.', 'error')
-      return
+      const saved = mode === 'create'
+        ? await createAdminVoucher(payload)
+        : await updateAdminVoucher(voucherId!, payload)
+
+      setToast({ message: mode === 'create' ? 'Voucher baru berhasil disimpan.' : 'Voucher berhasil diperbarui.', tone: 'success' })
+      router.push(`/admin/vouchers/${saved.id}`)
+    } catch {
+      setToast({ message: 'Gagal menyimpan data voucher.', tone: 'error' })
+    } finally {
+      setIsSaving(false)
     }
-    updateField('status', formState.status === 'active' ? 'inactive' : 'active')
-    showToast(`Status voucher diubah menjadi ${formState.status === 'active' ? 'nonaktif' : 'aktif'}.`, 'success')
   }
 
   const title =
@@ -182,6 +239,27 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
       : mode === 'edit'
         ? 'Edit Voucher'
         : voucher?.code ?? 'Detail Voucher'
+
+  if (loadError) {
+    return (
+      <div className="space-y-4">
+        <AdminPageHeader
+          title={title}
+          actions={
+            <Link href="/admin/vouchers">
+              <Button variant="ghost">
+                <ArrowLeft className="h-4 w-4" />
+                Kembali
+              </Button>
+            </Link>
+          }
+        />
+        <Card padding="md" className="border-navy-100 shadow-elevation-low">
+          <p className="text-sm text-navy-600">{loadError}</p>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -195,7 +273,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
                 Kembali
               </Button>
             </Link>
-            {mode === 'detail' && voucher && canEditExisting ? (
+            {mode === 'detail' && voucher ? (
               <Link href={`/admin/vouchers/${voucher.id}/edit`}>
                 <Button variant="ghost">
                   <Pencil className="h-4 w-4" />
@@ -204,7 +282,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
               </Link>
             ) : null}
             {!isReadOnly ? (
-              <Button onClick={saveVoucher}>
+              <Button onClick={saveVoucher} isLoading={isSaving} disabled={isLoading}>
                 <Save className="h-4 w-4" />
                 Simpan
               </Button>
@@ -215,38 +293,17 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
 
       <InlineToast toast={toast} />
 
-      <SectionCard
-        title="Informasi Voucher"
-        actions={
-          mode === 'detail' ? (
-            <Button variant={formState.status === 'active' ? 'danger' : 'primary'} size="sm" onClick={toggleStatus}>
-              {formState.status === 'active' ? 'Nonaktifkan' : 'Aktifkan'}
-            </Button>
-          ) : undefined
-        }
-      >
+      <SectionCard title="Informasi Voucher">
         {isReadOnly ? (
           <div className="space-y-3">
-            <MetaRow label="Kode" value={formState.code} />
-            <MetaRow label="Judul" value={formState.title} />
+            <MetaRow label="Kode" value={isLoading ? 'Memuat...' : formState.code} />
+            <MetaRow label="Status" value={<Badge variant={formState.isActive ? 'active' : 'inactive'} />} />
             <MetaRow
               label="Tipe diskon"
-              value={formState.discountType === 'percentage' ? 'Persentase' : formState.discountType === 'fixed' ? 'Nominal' : '-'}
+              value={formState.discountType === 'PERCENTAGE' ? 'Persentase' : formState.discountType === 'FIXED' ? 'Nominal' : '-'}
             />
-            <MetaRow
-              label="Nilai diskon"
-              value={
-                formState.discountType
-                  ? formatDiscountValue(formState.discountType, Number(formState.amount || '0'))
-                  : '-'
-              }
-            />
-            <MetaRow label="Kuota" value={formState.usageLimit || '-'} />
-            <MetaRow
-              label="Periode"
-              value={formState.startDate && formState.endDate ? formatDateRange(formState.startDate, formState.endDate) : '-'}
-            />
-            <MetaRow label="Status" value={<Badge variant={formState.status} />} />
+            <MetaRow label="Nilai diskon" value={formatDiscountValue(formState.discountType, formState.discountValue)} />
+            <MetaRow label="Kuota" value={formState.usageLimit || 'Tanpa batas'} />
           </div>
         ) : (
           <div className="space-y-4">
@@ -256,20 +313,19 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
                 label="Kode"
                 value={formState.code}
                 onChange={(event) => updateField('code', event.target.value.toUpperCase())}
+                disabled={isLoading}
               />
               <div className="flex items-end">
-                <Button variant="secondary" className="h-11" onClick={() => updateField('code', generateVoucherCode())}>
+                <Button
+                  variant="secondary"
+                  className="h-11"
+                  onClick={() => updateField('code', generateVoucherCode())}
+                  disabled={isLoading}
+                >
                   Generate
                 </Button>
               </div>
             </div>
-
-            <Input
-              id="voucher-title"
-              label="Judul"
-              value={formState.title}
-              onChange={(event) => updateField('title', event.target.value)}
-            />
 
             <div className="grid gap-4 md:grid-cols-2">
               <SelectField
@@ -278,67 +334,40 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
                 onChange={(value) => updateField('discountType', value as FormDiscountType)}
                 options={[
                   { value: '', label: 'Pilih tipe diskon' },
-                  { value: 'percentage', label: 'Persentase' },
-                  { value: 'fixed', label: 'Nominal' },
+                  { value: 'PERCENTAGE', label: 'Persentase' },
+                  { value: 'FIXED', label: 'Nominal' },
                 ]}
               />
 
-              <div>
-                <Input
-                  id="voucher-amount"
-                  label={
-                    formState.discountType === 'percentage'
-                      ? 'Nilai Diskon (%)'
-                      : formState.discountType === 'fixed'
-                        ? 'Nilai Diskon (Rp)'
-                        : 'Nilai Diskon'
-                  }
-                  disabled={!formState.discountType}
-                  value={formState.amount}
-                  onChange={(event) => updateField('amount', event.target.value.replace(/[^\d]/g, ''))}
-                  placeholder={
-                    formState.discountType === 'percentage'
-                      ? 'Contoh: 10'
-                      : formState.discountType === 'fixed'
-                        ? 'Contoh: 250000'
-                        : 'Pilih tipe diskon dulu'
-                  }
-                />
-              </div>
+              <Input
+                id="voucher-discount"
+                label={formState.discountType === 'PERCENTAGE' ? 'Nilai Diskon (%)' : 'Nilai Diskon (Rp)'}
+                disabled={!formState.discountType || isLoading}
+                value={formState.discountValue}
+                onChange={(event) => updateField('discountValue', digitsOnly(event.target.value))}
+                placeholder={formState.discountType === 'PERCENTAGE' ? 'Contoh: 10' : 'Contoh: 250000'}
+              />
 
               <Input
                 id="voucher-quota"
                 label="Kuota"
                 value={formState.usageLimit}
-                onChange={(event) => updateField('usageLimit', event.target.value.replace(/[^\d]/g, ''))}
+                onChange={(event) => updateField('usageLimit', digitsOnly(event.target.value))}
+                placeholder="Kosongkan jika tanpa batas"
+                disabled={isLoading}
               />
 
-              <SelectField
-                label="Status"
-                value={formState.status}
-                onChange={(value) => updateField('status', value as VoucherStatus)}
-                options={[
-                  { value: 'active', label: 'Aktif' },
-                  { value: 'inactive', label: 'Nonaktif' },
-                  { value: 'expired', label: 'Kedaluwarsa' },
-                ]}
-              />
-
-              <Input
-                id="voucher-start"
-                label="Tanggal Mulai"
-                type="date"
-                value={formState.startDate}
-                onChange={(event) => updateField('startDate', event.target.value)}
-              />
-
-              <Input
-                id="voucher-end"
-                label="Tanggal Selesai"
-                type="date"
-                value={formState.endDate}
-                onChange={(event) => updateField('endDate', event.target.value)}
-              />
+              {mode === 'edit' ? (
+                <SelectField
+                  label="Status"
+                  value={formState.isActive ? 'active' : 'inactive'}
+                  onChange={(value) => updateField('isActive', value === 'active')}
+                  options={[
+                    { value: 'active', label: 'Aktif' },
+                    { value: 'inactive', label: 'Nonaktif' },
+                  ]}
+                />
+              ) : null}
             </div>
           </div>
         )}
@@ -348,7 +377,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
         title="Produk"
         actions={
           !isReadOnly ? (
-            <Button variant="ghost" size="sm" onClick={() => setIsProductModalOpen(true)}>
+            <Button variant="ghost" size="sm" onClick={() => setIsProductModalOpen(true)} disabled={isLoading}>
               <Plus className="h-4 w-4" />
               Pilih Produk
             </Button>
@@ -385,7 +414,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-navy-200 bg-navy-50/70 p-4 text-sm text-navy-600">
-            Belum ada produk yang dipilih.
+            {isLoading ? 'Memuat produk...' : 'Belum ada produk yang dipilih.'}
           </div>
         )}
       </SectionCard>
@@ -393,7 +422,7 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
       <Modal isOpen={isProductModalOpen} onClose={() => setIsProductModalOpen(false)} title="Pilih Produk" size="lg">
         <div className="space-y-4">
           <div className="space-y-3">
-            {adminProductRecords.map((product: AdminProductRecord) => {
+            {productOptions.length ? productOptions.map((product) => {
               const checked = formState.selectedProductIds.includes(product.id)
 
               return (
@@ -413,13 +442,17 @@ export default function VoucherFormScreen({ mode, voucherId }: VoucherFormScreen
                     />
                     <div>
                       <p className="text-sm font-semibold text-navy-900">{product.name}</p>
-                      <p className="mt-1 text-sm text-navy-500">{formatRupiah(product.price)}</p>
+                      <p className="mt-1 text-sm text-navy-500">{product.category} • {formatRupiah(product.price)}</p>
                     </div>
                   </div>
                   {checked ? <Check className="h-4 w-4 text-gold-700" /> : null}
                 </label>
               )
-            })}
+            }) : (
+              <div className="rounded-2xl border border-dashed border-navy-200 bg-navy-50/70 p-4 text-sm text-navy-600">
+                Produk belum tersedia dari database.
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end">

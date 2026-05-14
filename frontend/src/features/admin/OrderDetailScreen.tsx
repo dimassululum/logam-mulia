@@ -1,61 +1,61 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, Clock3, CreditCard, ExternalLink, IdCard, Package, Store, TicketX, Truck, UserRound } from 'lucide-react'
+import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, CreditCard, ExternalLink, IdCard, Package, Store, Truck, UserRound } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { cn, formatRupiah } from '@/core/lib/utils'
 import {
   getOrderBadgeVariant,
-  type AdminOrderTimelineEvent,
   type AdminOrderDetailRecord,
 } from '@/features/admin/admin-management-data'
-import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
-import { AdminPageHeader, Badge, Button, Card, Input, Modal } from '@/shared/ui'
+import { fetchAdminOrder } from '@/features/orders/order-api'
+import { InlineToast } from '@/features/admin/admin-ui'
+import { AdminPageHeader, Badge, Button, Card, Modal } from '@/shared/ui'
+
+function normalizeOrderStatus(status: OrderStatus): OrderStatus {
+  if (['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(status)) return 'success'
+  if (status === 'cancelled') return 'canceled'
+  return status
+}
 
 function getOrderStatusHeadline(status: OrderStatus) {
-  switch (status) {
-    case 'paid':
-      return 'PAID (Lunas)'
+  switch (normalizeOrderStatus(status)) {
+    case 'success':
+      return 'Success'
+    case 'pending':
+      return 'Pending'
+    case 'canceled':
+      return 'Canceled'
+    default:
+      return String(status)
+  }
+}
+
+function getOrderStampLabel(status: OrderStatus) {
+  switch (normalizeOrderStatus(status)) {
+    case 'success':
+      return 'SUCCESS'
     case 'pending':
       return 'PENDING'
-    case 'processing':
-      return 'PROCESSING'
-    case 'shipped':
-      return 'SHIPPED'
-    case 'delivered':
-      return 'DELIVERED'
-    case 'completed':
-      return 'COMPLETED'
-    case 'cancelled':
-      return 'CANCELLED'
-    case 'refund':
-      return 'REFUND'
+    case 'canceled':
+      return 'CANCELED'
     default:
       return String(status).toUpperCase()
   }
 }
 
-function getOrderStampLabel(status: OrderStatus) {
-  switch (status) {
-    case 'paid':
-      return 'PAID'
+function getWatermarkClassName(status: OrderStatus) {
+  switch (normalizeOrderStatus(status)) {
+    case 'success':
+      return 'text-emerald-600/10'
+    case 'canceled':
+      return 'text-red-600/10'
     case 'pending':
-      return 'PENDING'
-    case 'processing':
-      return 'PROCESSING'
-    case 'shipped':
-      return 'SHIPPED'
-    case 'delivered':
-      return 'DELIVERED'
-    case 'completed':
-      return 'COMPLETED'
-    case 'cancelled':
-      return 'CANCELLED'
-    case 'refund':
-      return 'REFUND'
+      return 'text-amber-500/10'
     default:
-      return String(status).toUpperCase()
+      return 'text-navy-900/10'
   }
 }
 
@@ -86,7 +86,7 @@ function SectionCard({
   className?: string
 }) {
   return (
-    <Card padding="md" className={cn('border-navy-100 shadow-elevation-low', className)}>
+    <Card padding="md" className={cn('border-navy-100 bg-white/72 shadow-elevation-low backdrop-blur-[1px]', className)}>
       <div className="mb-4 flex items-center gap-3">
         <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gold-50 text-gold-700">
           {icon}
@@ -96,6 +96,57 @@ function SectionCard({
       {children}
     </Card>
   )
+}
+
+export default function OrderDetailScreen({
+  initialOrder,
+  orderId,
+}: {
+  initialOrder?: AdminOrderDetailRecord
+  orderId?: string
+}) {
+  const [order, setOrder] = useState<AdminOrderDetailRecord | null>(initialOrder ?? null)
+  const [isLoading, setIsLoading] = useState(!initialOrder && Boolean(orderId))
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!orderId || initialOrder) return
+    let alive = true
+
+    async function loadOrder() {
+      try {
+        const data = await fetchAdminOrder(orderId)
+        if (alive) setOrder(data)
+      } catch {
+        if (alive) setError('Gagal memuat detail pesanan.')
+      } finally {
+        if (alive) setIsLoading(false)
+      }
+    }
+
+    loadOrder()
+    return () => {
+      alive = false
+    }
+  }, [initialOrder, orderId])
+
+  if (isLoading) {
+    return (
+      <Card padding="md" className="border-navy-100 shadow-elevation-low">
+        <p className="text-sm text-navy-600">Memuat detail pesanan...</p>
+      </Card>
+    )
+  }
+
+  if (!order || error) {
+    return (
+      <Card padding="md" className="border-navy-100 shadow-elevation-low">
+        <p className="text-sm text-navy-600">{error || 'Pesanan tidak ditemukan.'}</p>
+      </Card>
+    )
+  }
+
+  return <OrderDetailContent initialOrder={order} />
 }
 
 function MetaRow({
@@ -143,127 +194,32 @@ function SummaryRow({
 }
 
 function DocumentPreview({ order }: { order: AdminOrderDetailRecord }) {
+  const publicKtpUrl = getPublicKtpUrl(order)
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-navy-200 bg-gradient-to-br from-gold-50 via-white to-navy-50 p-4">
-      <div className="absolute inset-y-0 right-0 w-24 bg-[radial-gradient(circle_at_center,_rgba(212,168,75,0.22),_transparent_70%)]" />
-      <div className="relative space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-700">Thumbnail KTP</p>
-        <p className="text-sm font-semibold text-navy-900">{order.recipientDetail.ktpDocumentLabel}</p>
-        <p className="text-sm text-navy-700">{order.recipientDetail.name.toUpperCase()}</p>
-        <p className="text-xs text-navy-500">{order.recipientDetail.city}, {order.recipientDetail.province}</p>
-      </div>
-    </div>
-  )
-}
-
-function TimelineItem({ event, isLast }: { event: AdminOrderTimelineEvent; isLast: boolean }) {
-  return (
-    <div className="relative flex gap-4">
-      <div className="relative flex w-5 justify-center">
-        {!isLast ? <span className="absolute top-5 h-[calc(100%+1rem)] w-px bg-navy-200" /> : null}
-        <span
-          className={cn(
-            'relative mt-1 h-3.5 w-3.5 rounded-full border-2 bg-white',
-            event.tone === 'success' && 'border-emerald-400',
-            event.tone === 'warning' && 'border-amber-400',
-            (!event.tone || event.tone === 'info') && 'border-blue-400',
-          )}
-        />
-      </div>
-      <div className="flex-1 rounded-2xl border border-navy-100 bg-white p-4">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="font-semibold text-navy-900">{event.title}</p>
-            <p className="mt-1 text-sm leading-6 text-navy-600">{event.description}</p>
-          </div>
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-navy-500">
-            {formatDetailDate(event.occurredAt)}
-          </p>
+    <div className="relative overflow-hidden rounded-2xl border border-navy-200 bg-white/70 p-4">
+      {publicKtpUrl ? (
+        <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={640} height={400} className="max-h-52 w-full rounded-xl object-contain" />
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-700">Thumbnail KTP</p>
+          <p className="text-sm font-semibold text-navy-900">{order.recipientDetail.ktpDocumentLabel}</p>
         </div>
-      </div>
+      )}
     </div>
   )
 }
 
-export default function OrderDetailScreen({ initialOrder }: { initialOrder: AdminOrderDetailRecord }) {
-  const [status, setStatus] = useState<OrderStatus>(initialOrder.status)
-  const [updatedAt, setUpdatedAt] = useState(initialOrder.updatedAt)
-  const [receiptCode, setReceiptCode] = useState(initialOrder.receiptCode)
-  const [receiptUpdatedAt, setReceiptUpdatedAt] = useState(initialOrder.receiptUpdatedAt)
-  const [timeline, setTimeline] = useState(initialOrder.timeline)
-  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+function getPublicKtpUrl(order: AdminOrderDetailRecord) {
+  const ktpUrl = order.recipientDetail.ktpUrl
+  if (!ktpUrl) return null
+  if (ktpUrl.startsWith('http')) return ktpUrl
+  return `${process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:5000'}${ktpUrl}`
+}
+
+function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRecord }) {
   const [isDocumentOpen, setIsDocumentOpen] = useState(false)
-  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false)
-  const [trackingInput, setTrackingInput] = useState(initialOrder.receiptCode === '-' ? '' : initialOrder.receiptCode)
-
-  useEffect(() => {
-    if (!toast) return
-    const timeout = window.setTimeout(() => setToast(null), 2200)
-    return () => window.clearTimeout(timeout)
-  }, [toast])
-
-  const order = useMemo(
-    () => ({
-      ...initialOrder,
-      status,
-      updatedAt,
-      receiptCode,
-      receiptUpdatedAt,
-      timeline,
-    }),
-    [initialOrder, receiptCode, receiptUpdatedAt, status, timeline, updatedAt],
-  )
-
-  function pushTimeline(nextStatus: OrderStatus, title: string, description: string, tone: ToastTone = 'success') {
-    const now = new Date().toISOString()
-    setStatus(nextStatus)
-    setUpdatedAt(now)
-    setTimeline((current) => [
-      {
-        id: `${nextStatus}-${now}`,
-        title,
-        description,
-        occurredAt: now,
-        tone: tone === 'success' ? 'success' : 'warning',
-      },
-      ...current,
-    ])
-  }
-
-  function handleTrackingSave() {
-    if (!trackingInput.trim()) {
-      setToast({ message: 'Nomor resi wajib diisi.', tone: 'error' })
-      return
-    }
-
-    const now = new Date().toISOString()
-    setReceiptCode(trackingInput.trim())
-    setReceiptUpdatedAt(now)
-    setStatus('shipped')
-    setUpdatedAt(now)
-    setTimeline((current) => [
-      {
-        id: `resi-${now}`,
-        title: 'Resi diinput',
-        description: `Nomor resi ${trackingInput.trim()} sudah dimasukkan oleh admin.`,
-        occurredAt: now,
-        tone: 'info',
-      },
-      ...current,
-    ])
-    setIsTrackingModalOpen(false)
-    setToast({ message: 'Resi berhasil disimpan.', tone: 'success' })
-  }
-
-  function handleRefund() {
-    pushTimeline('refund', 'Refund diproses', 'Order ditandai refund dari halaman detail order.', 'success')
-    setToast({ message: 'Order ditandai refund.', tone: 'success' })
-  }
-
-  function handleMarkReceived() {
-    pushTimeline('delivered', 'Pesanan diterima', 'Admin menandai bahwa pesanan sudah diterima customer.', 'success')
-    setToast({ message: 'Order ditandai diterima.', tone: 'success' })
-  }
+  const order = initialOrder
+  const publicKtpUrl = getPublicKtpUrl(order)
 
   return (
     <div className="space-y-4">
@@ -278,31 +234,19 @@ export default function OrderDetailScreen({ initialOrder }: { initialOrder: Admi
                   Kembali
                 </Button>
               </Link>
-              <Button variant="secondary" onClick={() => setIsTrackingModalOpen(true)}>
-                <Truck className="h-4 w-4" />
-                Input Resi
-              </Button>
-              <Button variant="danger" onClick={handleRefund}>
-                <TicketX className="h-4 w-4" />
-                Refund
-              </Button>
-              <Button onClick={handleMarkReceived}>
-                <CheckCircle2 className="h-4 w-4" />
-                Tandai Diterima
-              </Button>
             </>
           }
         />
       </div>
 
-      <InlineToast toast={toast} />
+      <InlineToast toast={null} />
 
-      <Card padding="none" className="relative overflow-hidden border-navy-100 shadow-elevation-low">
+      <Card padding="none" className="relative overflow-hidden border-navy-100 bg-white/40 shadow-elevation-low">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div
             className={cn(
-              'absolute left-1/2 top-1/4 -translate-x-1/2 -translate-y-1/2 rotate-[-18deg] rounded-[28px] border-[5px] px-10 py-4 text-4xl font-semibold tracking-[0.38em] opacity-0 transition-opacity md:text-6xl',
-              order.status === 'paid' && 'border-emerald-400/20 text-emerald-500/20 opacity-100',
+              'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rotate-[-24deg] whitespace-nowrap text-6xl font-black uppercase tracking-[0.35em] md:text-8xl',
+              getWatermarkClassName(order.status),
             )}
           >
             {getOrderStampLabel(order.status)}
@@ -342,7 +286,7 @@ export default function OrderDetailScreen({ initialOrder }: { initialOrder: Admi
                 <MetaRow label="Metode" value={order.paymentMethod} strong />
                 <MetaRow label="Tanggal Order" value={formatDetailDate(order.createdAt)} />
                 <MetaRow label="Terakhir Diperbarui" value={formatDetailDate(order.updatedAt)} />
-                <div className="rounded-2xl bg-navy-50 p-4">
+                <div className="rounded-2xl border border-white/45 bg-white/35 p-4 backdrop-blur-[1px]">
                   <div className="space-y-3">
                     <SummaryRow label="Subtotal Produk" value={formatRupiah(order.subtotalAmount)} />
                     <SummaryRow label="Biaya Pengiriman" value={formatRupiah(order.shippingFee)} />
@@ -409,56 +353,23 @@ export default function OrderDetailScreen({ initialOrder }: { initialOrder: Admi
                       value={`${order.recipientDetail.village}, ${order.recipientDetail.district}, ${order.recipientDetail.city}, ${order.recipientDetail.province}`}
                     />
                     <MetaRow label="Kode Pos" value={order.recipientDetail.postalCode} mono />
-                    <MetaRow label="Resi" value={order.receiptCode} mono strong />
                   </>
                 )}
               </div>
             </SectionCard>
           </div>
 
-          <SectionCard title="Timeline Transaksi" icon={<Clock3 className="h-5 w-5" />}>
-            <div className="space-y-4">
-              {order.timeline.map((event, index) => (
-                <TimelineItem key={event.id} event={event} isLast={index === order.timeline.length - 1} />
-              ))}
-            </div>
-          </SectionCard>
         </div>
       </Card>
 
       <Modal isOpen={isDocumentOpen} onClose={() => setIsDocumentOpen(false)} title="Dokumen KTP" size="lg">
-        <div className="space-y-4">
-          <DocumentPreview order={order} />
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl bg-navy-50 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-navy-500">Nama pada dokumen</p>
-              <p className="mt-2 font-semibold text-navy-900">{order.recipientDetail.name}</p>
-            </div>
-            <div className="rounded-2xl bg-navy-50 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-navy-500">Kontak</p>
-              <p className="mt-2 font-semibold text-navy-900">{order.recipientDetail.phone}</p>
-            </div>
-          </div>
-        </div>
+        {publicKtpUrl ? (
+          <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={960} height={600} className="max-h-[72vh] w-full rounded-xl object-contain" />
+        ) : (
+          <p className="text-sm text-navy-600">Gambar KTP belum tersedia.</p>
+        )}
       </Modal>
 
-      <Modal isOpen={isTrackingModalOpen} onClose={() => setIsTrackingModalOpen(false)} title="Input Resi" size="md">
-        <div className="space-y-4">
-          <Input
-            id="tracking-number"
-            label="Nomor resi"
-            value={trackingInput}
-            onChange={(event) => setTrackingInput(event.target.value)}
-            placeholder="Masukkan nomor resi"
-          />
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setIsTrackingModalOpen(false)}>
-              Batal
-            </Button>
-            <Button onClick={handleTrackingSave}>Simpan Resi</Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }

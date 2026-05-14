@@ -92,11 +92,13 @@ export function TextareaField({
   label,
   value,
   rows = 4,
+  error,
   onChange,
 }: {
   label: string
   value: string
   rows?: number
+  error?: string
   onChange: (value: string) => void
 }) {
   return (
@@ -106,8 +108,13 @@ export function TextareaField({
         value={value}
         rows={rows}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-2xl border border-navy-200 bg-white px-4 py-3 text-sm text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-400/30"
+        className={`w-full rounded-2xl border bg-white px-4 py-3 text-sm text-navy-700 outline-none transition focus:ring-2 ${
+          error
+            ? 'border-red-400 focus:border-red-400 focus:ring-red-400/30'
+            : 'border-navy-200 focus:border-gold-400 focus:ring-gold-400/30'
+        }`}
       />
+      {error ? <p className="text-xs text-red-500">{error}</p> : null}
     </label>
   )
 }

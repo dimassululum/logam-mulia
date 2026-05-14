@@ -1,0 +1,99 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import 'express-async-errors';
+import path from 'path';
+
+import { env } from './config/env';
+import { errorHandler } from './middlewares/error.middleware';
+import { logger } from './utils/logger';
+
+// Feature routes
+import authRoutes from '../features/auth/routes/auth.routes';
+import categoryRoutes from '../features/categories/routes/category.routes';
+import productRoutes from '../features/products/routes/product.routes';
+import boutiqueRoutes from '../features/boutique/routes/boutique.routes';
+import boutiquesRoutes from '../features/boutiques/routes/boutique.routes';
+import articleRoutes from '../features/articles/routes/article.routes';
+import companyProfileRoutes from '../features/company-profile/routes/company-profile.routes';
+import voucherRoutes from '../features/vouchers/routes/voucher.routes';
+import checkoutRoutes from '../features/checkout/routes/checkout.routes';
+import customerRoutes from '../features/customers/routes/customer.routes';
+import orderRoutes from '../features/orders/routes/order.routes';
+
+const app = express();
+
+// ─── Security ──────────────────────────────────────────────────────────────
+app.use(helmet());
+
+app.use(
+  cors({
+    origin: env.FRONTEND_URL,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// ─── Rate Limiting ─────────────────────────────────────────────────────────
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300,
+  message: { success: false, message: 'Terlalu banyak request, coba lagi nanti' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { success: false, message: 'Terlalu banyak percobaan login, coba lagi dalam 15 menit' },
+});
+
+app.use(globalLimiter);
+
+// ─── Body Parsing ──────────────────────────────────────────────────────────
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ─── Static Files (must be before helmet to allow cross-origin) ────────────
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.resolve(env.UPLOAD_DIR)));
+
+// ─── Health Check ──────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    environment: env.NODE_ENV,
+  });
+});
+
+// ─── API Routes ────────────────────────────────────────────────────────────
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/boutique', boutiqueRoutes);
+app.use('/api/boutiques', boutiquesRoutes);
+app.use('/api/articles', articleRoutes);
+app.use('/api/company-profile', companyProfileRoutes);
+app.use('/api/vouchers', voucherRoutes);
+app.use('/api/checkout', checkoutRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/orders', orderRoutes);
+
+// ─── 404 Handler ───────────────────────────────────────────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ success: false, message: 'Endpoint tidak ditemukan' });
+});
+
+// ─── Global Error Handler ──────────────────────────────────────────────────
+app.use(errorHandler);
+
+logger.info(`Server configured — env: ${env.NODE_ENV}`);
+
+export default app;

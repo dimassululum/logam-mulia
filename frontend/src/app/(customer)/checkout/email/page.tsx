@@ -18,8 +18,9 @@ export default function CheckoutEmailPage() {
   const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [profile, setProfile] = useState<GuestCheckoutProfile | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     if (!email.trim()) {
@@ -35,10 +36,18 @@ export default function CheckoutEmailPage() {
       return
     }
 
-    const nextProfile = lookupGuestProfile(email)
-    saveGuestCheckoutProfile(nextProfile)
-    setProfile(nextProfile)
-    setError('')
+    setIsLoading(true)
+    try {
+      const nextProfile = await lookupGuestProfile(email)
+      saveGuestCheckoutProfile(nextProfile)
+      setProfile(nextProfile)
+      setError('')
+    } catch {
+      setError('Gagal mengecek email')
+      setProfile(null)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleContinue = () => {
@@ -77,7 +86,7 @@ export default function CheckoutEmailPage() {
                 required
               />
 
-              <Button type="submit" variant="secondary" size="lg" fullWidth>
+              <Button type="submit" variant="secondary" size="lg" fullWidth isLoading={isLoading}>
                 <Search className="h-4 w-4" />
                 Cek Email
               </Button>
@@ -98,7 +107,7 @@ export default function CheckoutEmailPage() {
                       </p>
                       <p className="mt-1 text-sm text-navy-600">
                         {profile.found
-                          ? 'Data alamat dan KTP akan dipakai di checkout.'
+                          ? 'Data alamat dan KTP dari database akan dipakai di checkout.'
                           : 'Checkout lanjut dengan data kosong.'}
                       </p>
                     </div>

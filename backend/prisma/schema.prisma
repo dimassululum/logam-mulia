@@ -41,33 +41,42 @@ enum DiscountType {
 // ===========================
 
 model User {
-  id            String    @id @default(uuid())
-  name          String
-  email         String    @unique
-  passwordHash  String    @map("password_hash")
-  phone         String?
-  role          Role      @default(CUSTOMER)
-  ktpUrl        String?   @map("ktp_url")      // Path file KTP terenkripsi (private storage)
-  isKycVerified Boolean   @default(false) @map("is_kyc_verified")
-  addresses     Address[]
-  orders        Order[]
-  reviews       Review[]
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id             String         @id @default(uuid())
+  name           String
+  email          String         @unique
+  passwordHash   String         @map("password_hash")
+  phone          String?
+  role           Role           @default(CUSTOMER)
+  ktpUrl         String?        @map("ktp_url")
+  isKycVerified  Boolean        @default(false) @map("is_kyc_verified")
+  isActive       Boolean        @default(true) @map("is_active")
+  lastLoginAt    DateTime?      @map("last_login_at")
+  refreshToken   String?        @map("refresh_token")
+  addresses      Address[]
+  orders         Order[]
+  reviews        Review[]
+  voucherUsages  VoucherUsage[]
+  articles       Article[]
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
 
   @@map("users")
 }
 
 model Address {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id])
-  label     String   // "Rumah", "Kantor", dll
-  address   String
-  city      String
-  province  String
-  postalCode String  @map("postal_code")
-  isDefault Boolean  @default(false) @map("is_default")
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  label      String   // "Rumah", "Kantor", dll
+  fullName   String?  @map("full_name")
+  phone      String?
+  address    String
+  city       String
+  district   String?
+  village    String?
+  province   String
+  postalCode String   @map("postal_code")
+  isDefault  Boolean  @default(false) @map("is_default")
 
   @@map("addresses")
 }
@@ -100,6 +109,7 @@ model Product {
   orderItems  OrderItem[]
   reviews     Review[]
   promos      Promo[]
+  vouchers    Voucher[]
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
 
@@ -118,25 +128,38 @@ model ProductImage {
 }
 
 model Order {
-  id                   String      @id // Custom: INV-20250425-001
-  userId               String      @map("user_id")
-  user                 User        @relation(fields: [userId], references: [id])
-  status               OrderStatus @default(PENDING)
-  totalAmount          Decimal     @map("total_amount") @db.Decimal(15, 2)
-  shippingCost         Decimal     @map("shipping_cost") @db.Decimal(15, 2)
-  discountAmount       Decimal     @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  grandTotal           Decimal     @map("grand_total") @db.Decimal(15, 2)
-  shippingAddress      String      @map("shipping_address")
-  shippingCity         String      @map("shipping_city")
-  shippingCourier      String?     @map("shipping_courier")  // JNE, Paxel, SELFPICKUP
-  trackingNumber       String?     @map("tracking_number")
-  ktpImageUrl          String?     @map("ktp_image_url")     // Path KTP customer
-  voucherId            String?     @map("voucher_id")
-  voucher              Voucher?    @relation(fields: [voucherId], references: [id])
-  midtransTransactionId String?    @map("midtrans_transaction_id")
-  items                OrderItem[]
-  createdAt            DateTime    @default(now()) @map("created_at")
-  updatedAt            DateTime    @updatedAt @map("updated_at")
+  id                    String           @id // Custom: INV-20250425-001
+  userId                String           @map("user_id")
+  user                  User             @relation(fields: [userId], references: [id])
+  status                OrderStatus      @default(PENDING)
+  totalAmount           Decimal          @map("total_amount") @db.Decimal(15, 2)
+  shippingCost          Decimal          @map("shipping_cost") @db.Decimal(15, 2)
+  adminFee              Decimal          @default(0) @map("admin_fee") @db.Decimal(15, 2)
+  discountAmount        Decimal          @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  grandTotal            Decimal          @map("grand_total") @db.Decimal(15, 2)
+  shippingAddress       String           @map("shipping_address")
+  shippingCity          String           @map("shipping_city")
+  shippingProvince      String?          @map("shipping_province")
+  shippingDistrict      String?          @map("shipping_district")
+  shippingVillage       String?          @map("shipping_village")
+  shippingPostalCode    String?          @map("shipping_postal_code")
+  shippingCourier       String?          @map("shipping_courier")  // JNE, Paxel, SELFPICKUP
+  shippingService       String?          @map("shipping_service")  // REG, YES, OKE
+  trackingNumber        String?          @map("tracking_number")
+  ktpImageUrl           String?          @map("ktp_image_url")
+  notes                 String?
+  cancelReason          String?          @map("cancel_reason")
+  cancelledAt           DateTime?        @map("cancelled_at")
+  voucherId             String?          @map("voucher_id")
+  voucher               Voucher?         @relation(fields: [voucherId], references: [id])
+  midtransTransactionId String?          @map("midtrans_transaction_id")
+  snapToken             String?          @map("snap_token")
+  items                 OrderItem[]
+  statusLogs            OrderStatusLog[]
+  reviews               Review[]
+  voucherUsages         VoucherUsage[]
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
 
   @@map("orders")
 }
@@ -147,64 +170,180 @@ model OrderItem {
   order           Order   @relation(fields: [orderId], references: [id])
   productId       String  @map("product_id")
   product         Product @relation(fields: [productId], references: [id])
-  priceAtPurchase Decimal @map("price_at_purchase") @db.Decimal(15, 2)  // Harga dikunci saat beli
+  productName     String  @map("product_name")   // Snapshot nama saat beli
+  productImage    String? @map("product_image")   // Snapshot foto utama
+  priceAtPurchase Decimal @map("price_at_purchase") @db.Decimal(15, 2)
   quantity        Int
   subtotal        Decimal @db.Decimal(15, 2)
 
   @@map("order_items")
 }
 
-model Review {
-  id        String  @id @default(uuid())
-  userId    String  @map("user_id")
-  user      User    @relation(fields: [userId], references: [id])
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id])
-  rating    Int     // 1-5
-  comment   String?
-  imageUrl  String? @map("image_url")
-  isHidden  Boolean @default(false) @map("is_hidden")
-  createdAt DateTime @default(now()) @map("created_at")
+model OrderStatusLog {
+  id        String      @id @default(uuid())
+  orderId   String      @map("order_id")
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now()) @map("created_at")
 
+  @@map("order_status_logs")
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id])
+  orderId   String   @map("order_id")
+  order     Order    @relation(fields: [orderId], references: [id])
+  rating    Int      // 1-5
+  comment   String?
+  imageUrl  String?  @map("image_url")
+  isHidden  Boolean  @default(false) @map("is_hidden")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, orderId, productId]) // Satu review per produk per order
   @@map("reviews")
 }
 
 model Voucher {
-  id           String       @id @default(uuid())
-  code         String       @unique
-  discountType DiscountType @map("discount_type")
-  discountValue Decimal     @map("discount_value") @db.Decimal(15, 2)
-  minPurchase  Decimal      @default(0) @map("min_purchase") @db.Decimal(15, 2)
-  maxDiscount  Decimal?     @map("max_discount") @db.Decimal(15, 2)
-  usageLimit   Int?         @map("usage_limit")
-  usageCount   Int          @default(0) @map("usage_count")
-  perUserLimit Int          @default(1) @map("per_user_limit")
-  isActive     Boolean      @default(true) @map("is_active")
-  startsAt     DateTime?    @map("starts_at")
-  expiresAt    DateTime?    @map("expires_at")
-  orders       Order[]
+  id            String         @id @default(uuid())
+  code          String         @unique
+  discountType  DiscountType   @map("discount_type")
+  discountValue Decimal        @map("discount_value") @db.Decimal(15, 2)
+  minPurchase   Decimal        @default(0) @map("min_purchase") @db.Decimal(15, 2)
+  maxDiscount   Decimal?       @map("max_discount") @db.Decimal(15, 2)
+  usageLimit    Int?           @map("usage_limit")
+  usageCount    Int            @default(0) @map("usage_count")
+  perUserLimit  Int            @default(1) @map("per_user_limit")
+  isActive      Boolean        @default(true) @map("is_active")
+  startsAt      DateTime?      @map("starts_at")
+  expiresAt     DateTime?      @map("expires_at")
+  products      Product[]
+  orders        Order[]
+  usages        VoucherUsage[]
 
   @@map("vouchers")
 }
 
+model VoucherUsage {
+  id        String   @id @default(uuid())
+  voucherId String   @map("voucher_id")
+  voucher   Voucher  @relation(fields: [voucherId], references: [id])
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  orderId   String   @map("order_id")
+  order     Order    @relation(fields: [orderId], references: [id])
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  @@unique([voucherId, userId, orderId])
+  @@map("voucher_usages")
+}
+
 model Promo {
-  id           String       @id @default(uuid())
-  name         String
-  discountType DiscountType @map("discount_type")
-  discountValue Decimal     @map("discount_value") @db.Decimal(15, 2)
-  products     Product[]
-  categories   Category[]
-  startsAt     DateTime?    @map("starts_at")
-  expiresAt    DateTime?    @map("expires_at")
-  isActive     Boolean      @default(true) @map("is_active")
+  id            String       @id @default(uuid())
+  name          String
+  discountType  DiscountType @map("discount_type")
+  discountValue Decimal      @map("discount_value") @db.Decimal(15, 2)
+  maxDiscount   Decimal?     @map("max_discount") @db.Decimal(15, 2)
+  products      Product[]
+  categories    Category[]
+  startsAt      DateTime?    @map("starts_at")
+  expiresAt     DateTime?    @map("expires_at")
+  isActive      Boolean      @default(true) @map("is_active")
 
   @@map("promos")
 }
 
+model Banner {
+  id        String   @id @default(uuid())
+  imageUrl  String   @map("image_url")
+  linkUrl   String?  @map("link_url")
+  title     String?
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("banners")
+}
+
 model Setting {
-  key       String @id
+  key       String   @id
   value     String
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+// ===========================
+// BUTIK
+// ===========================
+
+model BoutiqueProduct {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  price       Decimal  @db.Decimal(15, 2)
+  imageUrl    String?  @map("image_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("boutique_products")
+}
+
+model Boutique {
+  id            String   @id @default(uuid())
+  name          String
+  slug          String   @unique
+  city          String
+  address       String
+  contactPhone  String   @map("contact_phone")
+  googleMapsUrl String   @map("google_maps_url")
+  isActive      Boolean  @default(true) @map("is_active")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("boutiques")
+}
+
+// ===========================
+// ARTIKEL / BLOG
+// ===========================
+
+model Article {
+  id          String   @id @default(uuid())
+  title       String
+  slug        String   @unique
+  excerpt     String?
+  content     String
+  coverUrl    String?  @map("cover_url")
+  authorId    String   @map("author_id")
+  author      User     @relation(fields: [authorId], references: [id])
+  isPublished Boolean  @default(false) @map("is_published")
+  publishedAt DateTime? @map("published_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("articles")
+}
+
+// ===========================
+// COMPANY PROFILE
+// ===========================
+
+model CompanyProfile {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. "hero_title", "about_us", "vision", "mission"
+  value       String
+  type        String   @default("text") // "text" | "image" | "list"
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("company_profile")
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react'
 import { CompanyProfileToast, SelectField, useCompanyProfileToast, type PublishStatus } from '@/features/admin/company-profile-shared'
+import { fetchCompanyProfile, readProfileJson, saveCompanyProfileItems } from '@/features/admin/company-profile-api'
 import { IconActionButton } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Card, Input, Modal } from '@/shared/ui'
@@ -52,6 +53,9 @@ const EMPTY_FORM = {
   expiresAt: '',
 }
 
+type BannerFormField = 'title' | 'thumbnailUrl' | 'expiresAt' | 'form'
+type BannerFormErrors = Partial<Record<BannerFormField, string>>
+
 function formatDateLabel(value: string) {
   if (!value) return '-'
   return new Intl.DateTimeFormat('id-ID', {
@@ -61,12 +65,46 @@ function formatDateLabel(value: string) {
   }).format(new Date(`${value}T00:00:00`))
 }
 
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function CompanyProfileBannerScreen() {
   const { toast, showToast } = useCompanyProfileToast()
   const [banners, setBanners] = useState(initialBanners)
+  const [isLoading, setIsLoading] = useState(true)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [formState, setFormState] = useState(EMPTY_FORM)
+  const [formErrors, setFormErrors] = useState<BannerFormErrors>({})
   const [deleteTarget, setDeleteTarget] = useState<BannerRecord | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadBanners() {
+      try {
+        const profile = await fetchCompanyProfile()
+        if (!isMounted) return
+        setBanners(readProfileJson(profile, 'homepage_banners', initialBanners))
+      } catch (error) {
+        console.error('Error fetching company profile banners', error)
+        showToast('Gagal memuat banner.', 'error')
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
+    }
+
+    loadBanners()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -134,8 +172,43 @@ export default function CompanyProfileBannerScreen() {
     [banners],
   )
 
+  function updateFormField<Field extends keyof typeof EMPTY_FORM>(field: Field, value: (typeof EMPTY_FORM)[Field]) {
+    setFormState((current) => ({ ...current, [field]: value }))
+    setFormErrors((current) => {
+      if (!current[field as BannerFormField] && !current.form) return current
+      const next = { ...current }
+      delete next[field as BannerFormField]
+      delete next.form
+      return next
+    })
+  }
+
+  function validateForm() {
+    const nextErrors: BannerFormErrors = {}
+
+    if (formState.title.trim().length < 3) {
+      nextErrors.title = 'Judul banner minimal 3 karakter.'
+    }
+    if (!formState.thumbnailUrl.trim()) {
+      nextErrors.thumbnailUrl = 'File banner wajib dipilih.'
+    }
+    if (!formState.expiresAt) {
+      nextErrors.expiresAt = 'Tanggal kedaluwarsa wajib diisi.'
+    }
+
+    setFormErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  async function persistBanners(nextBanners: BannerRecord[]) {
+    await saveCompanyProfileItems([
+      { key: 'homepage_banners', value: JSON.stringify(nextBanners), type: 'list' },
+    ])
+  }
+
   function openCreateModal() {
     setFormState(EMPTY_FORM)
+    setFormErrors({})
     setIsFormOpen(true)
   }
 
@@ -148,10 +221,11 @@ export default function CompanyProfileBannerScreen() {
       status: banner.status,
       expiresAt: banner.expiresAt,
     })
+    setFormErrors({})
     setIsFormOpen(true)
   }
 
-  function handleThumbnailChange(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleThumbnailChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -159,18 +233,24 @@ export default function CompanyProfileBannerScreen() {
       URL.revokeObjectURL(formState.thumbnailUrl)
     }
 
+    const dataUrl = await fileToDataUrl(file)
+
     setFormState((current) => ({
       ...current,
       thumbnailName: file.name,
-      thumbnailUrl: URL.createObjectURL(file),
+      thumbnailUrl: dataUrl,
     }))
+    setFormErrors((current) => {
+      if (!current.thumbnailUrl && !current.form) return current
+      const next = { ...current }
+      delete next.thumbnailUrl
+      delete next.form
+      return next
+    })
   }
 
-  function saveBanner() {
-    if (!formState.title.trim() || !formState.thumbnailUrl.trim() || !formState.expiresAt) {
-      showToast('Judul, file banner, dan tanggal kedaluwarsa wajib diisi.', 'error')
-      return
-    }
+  async function saveBanner() {
+    if (!validateForm()) return
 
     const nextRecord: BannerRecord = {
       id: formState.id || `banner-${banners.length + 1}`,
@@ -181,23 +261,34 @@ export default function CompanyProfileBannerScreen() {
       expiresAt: formState.expiresAt,
     }
 
-    setBanners((current) => {
-      const exists = current.some((banner) => banner.id === nextRecord.id)
-      if (!exists) return [nextRecord, ...current]
-      return current.map((banner) => (banner.id === nextRecord.id ? nextRecord : banner))
-    })
-    setIsFormOpen(false)
-    showToast('Banner berhasil disimpan.', 'success')
+    const nextBanners = banners.some((banner) => banner.id === nextRecord.id)
+      ? banners.map((banner) => (banner.id === nextRecord.id ? nextRecord : banner))
+      : [nextRecord, ...banners]
+
+    try {
+      await persistBanners(nextBanners)
+      setBanners(nextBanners)
+      setIsFormOpen(false)
+      showToast('Banner berhasil disimpan.', 'success')
+    } catch (error) {
+      console.error('Error saving banners', error)
+      setFormErrors({ form: 'Gagal menyimpan banner. Periksa data lalu coba lagi.' })
+    }
   }
 
-  function deleteBanner() {
+  async function deleteBanner() {
     if (!deleteTarget) return
-    if (deleteTarget.thumbnailUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(deleteTarget.thumbnailUrl)
+
+    const nextBanners = banners.filter((banner) => banner.id !== deleteTarget.id)
+    try {
+      await persistBanners(nextBanners)
+      setBanners(nextBanners)
+      setDeleteTarget(null)
+      showToast('Banner berhasil dihapus.', 'success')
+    } catch (error) {
+      console.error('Error deleting banner', error)
+      showToast('Gagal menghapus banner.', 'error')
     }
-    setBanners((current) => current.filter((banner) => banner.id !== deleteTarget.id))
-    setDeleteTarget(null)
-    showToast('Banner berhasil dihapus.', 'success')
   }
 
   return (
@@ -219,27 +310,42 @@ export default function CompanyProfileBannerScreen() {
         <AdminTable
           columns={columns}
           rows={rows}
-          emptyState={<AdminEmptyState title="Banner belum tersedia" description="Tambahkan banner pertama untuk homepage." />}
+          emptyState={
+            <AdminEmptyState
+              title={isLoading ? 'Memuat banner' : 'Banner belum tersedia'}
+              description={isLoading ? 'Mengambil data dari backend.' : 'Tambahkan banner pertama untuk homepage.'}
+            />
+          }
         />
       </div>
 
       <Modal
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={() => {
+          setIsFormOpen(false)
+          setFormErrors({})
+        }}
         title={formState.id ? 'Edit Banner' : 'Tambah Banner'}
         size="md"
       >
         <div className="space-y-4">
+          {formErrors.form ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              {formErrors.form}
+            </div>
+          ) : null}
+
           <Input
             id="banner-title"
             label="Judul"
             value={formState.title}
-            onChange={(event) => setFormState((current) => ({ ...current, title: event.target.value }))}
+            error={formErrors.title}
+            onChange={(event) => updateFormField('title', event.target.value)}
           />
 
           <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
             <span>File upload</span>
-            <label className="flex min-h-28 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-navy-200 bg-navy-50 px-4 py-6 text-center transition-colors hover:border-gold-300 hover:bg-gold-50/40">
+            <label className={`flex min-h-28 cursor-pointer items-center justify-center rounded-2xl border border-dashed bg-navy-50 px-4 py-6 text-center transition-colors hover:border-gold-300 hover:bg-gold-50/40 ${formErrors.thumbnailUrl ? 'border-red-400' : 'border-navy-200'}`}>
               <input type="file" accept="image/*" className="hidden" onChange={handleThumbnailChange} />
               <div className="space-y-2">
                 <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white text-navy-500 shadow-elevation-low">
@@ -249,6 +355,7 @@ export default function CompanyProfileBannerScreen() {
                 <p className="text-xs text-navy-500">Klik untuk upload atau ganti gambar</p>
               </div>
             </label>
+            {formErrors.thumbnailUrl ? <p className="text-xs text-red-500">{formErrors.thumbnailUrl}</p> : null}
           </label>
 
           {formState.thumbnailUrl && (
@@ -267,21 +374,27 @@ export default function CompanyProfileBannerScreen() {
             label="Tanggal kedaluwarsa"
             type="date"
             value={formState.expiresAt}
-            onChange={(event) => setFormState((current) => ({ ...current, expiresAt: event.target.value }))}
+            error={formErrors.expiresAt}
+            onChange={(event) => updateFormField('expiresAt', event.target.value)}
           />
 
-          <SelectField
-            label="Status"
-            value={formState.status}
-            onChange={(value) => setFormState((current) => ({ ...current, status: value as PublishStatus }))}
-            options={[
-              { value: 'active', label: 'Aktif' },
-              { value: 'inactive', label: 'Nonaktif' },
-            ]}
-          />
+          {formState.id ? (
+            <SelectField
+              label="Status"
+              value={formState.status}
+              onChange={(value) => updateFormField('status', value as PublishStatus)}
+              options={[
+                { value: 'active', label: 'Aktif' },
+                { value: 'inactive', label: 'Nonaktif' },
+              ]}
+            />
+          ) : null}
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setIsFormOpen(false)}>Batal</Button>
+            <Button variant="ghost" onClick={() => {
+              setIsFormOpen(false)
+              setFormErrors({})
+            }}>Batal</Button>
             <Button onClick={saveBanner}>
               <Pencil className="h-4 w-4" />
               Simpan

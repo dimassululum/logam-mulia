@@ -4,32 +4,43 @@ import Image from 'next/image'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import LoginForm from '@/features/auth/LoginForm'
-import { createMockCurrentUser, MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { apiClient } from '@/core/lib/api-client'
 
 export default function LoginPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = async ({ email }: { email: string; password: string }) => {
+  const handleLogin = async ({ email, password }: any) => {
     setIsLoading(true)
+    setError(null)
 
-    const currentUser = createMockCurrentUser(email)
+    try {
+      const response = await apiClient.post('/auth/login', { email, password })
+      const { user, tokens } = response.data.data
 
-    if (currentUser) {
-      document.cookie = `${MOCK_AUTH_COOKIES.role}=${currentUser.role}; path=/; max-age=28800; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(currentUser.name)}; path=/; max-age=28800; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(currentUser.email)}; path=/; max-age=28800; SameSite=Lax`
+      // Store token in localStorage
+      localStorage.setItem('access_token', tokens.accessToken)
+      localStorage.setItem('refresh_token', tokens.refreshToken)
 
-      router.push('/admin')
+      // Store in cookies for compatibility with existing middleware if any
+      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=28800; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=28800; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=28800; SameSite=Lax`
+
+      if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
+        router.push('/admin')
+      } else {
+        router.push('/')
+      }
       router.refresh()
-      return
+    } catch (err: any) {
+      console.error(err)
+      setError(err.response?.data?.message || 'Terjadi kesalahan saat login.')
+    } finally {
+      setIsLoading(false)
     }
-
-    document.cookie = `${MOCK_AUTH_COOKIES.role}=customer; path=/; max-age=28800; SameSite=Lax`
-    document.cookie = `${MOCK_AUTH_COOKIES.name}=Customer%20Demo; path=/; max-age=28800; SameSite=Lax`
-    document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(email)}; path=/; max-age=28800; SameSite=Lax`
-    router.push('/')
-    router.refresh()
   }
 
   return (
@@ -50,11 +61,12 @@ export default function LoginPage() {
           <h1 className="text-[24px] font-heading font-bold text-navy-900">Selamat Datang Kembali</h1>
           <p className="text-sm text-navy-600 mt-1">Masuk ke Web Admin Logam Mulia</p>
           <p className="mt-3 text-xs leading-5 text-navy-500">
-            Mode demo aktif. Email yang mengandung kata <span className="font-semibold text-gold-600">admin</span> akan diarahkan ke panel admin.
+            Masuk dengan <span className="font-semibold text-gold-600">admin@logam-mulia.com</span> / <span className="font-semibold text-gold-600">admin123</span>
           </p>
         </div>
 
         <div className="card-surface rounded-2xl p-8">
+          {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-100">{error}</div>}
           <LoginForm onSubmit={handleLogin} isLoading={isLoading} />
         </div>
       </div>

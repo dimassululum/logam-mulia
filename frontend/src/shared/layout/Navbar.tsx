@@ -34,8 +34,8 @@ export default function Navbar() {
         className={cn(
           'fixed top-0 left-0 right-0 z-40 transition-all [transition-duration:var(--transition-slow)]',
           scrolled
-            ? 'bg-navy-900/95 backdrop-blur-md shadow-elevation-high'
-            : 'bg-navy-900',
+            ? 'bg-white/95 backdrop-blur-md shadow-elevation-high'
+            : 'bg-white',
         )}
       >
         <nav className="container-main h-16 flex items-center relative">
@@ -59,7 +59,7 @@ export default function Navbar() {
             aria-label="Logam Mulia Antam - Beranda"
           >
             <div className="leading-tight">
-              <span className="block text-[24px] font-heading font-bold text-gold-400 tracking-wide">Logam Mulia</span>
+              <span className="block text-[24px] font-heading font-bold text-navy-900 tracking-wide">Logam Mulia</span>
             </div>
           </Link>
 
@@ -67,7 +67,7 @@ export default function Navbar() {
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
             {/* Search */}
             <button
-              className="p-2 text-navy-300 hover:text-gold-400 hover:bg-navy-800 rounded-lg [transition-duration:var(--transition-fast)] transition-all"
+              className="p-2 text-navy-900 hover:text-white hover:bg-gold-600 rounded-lg [transition-duration:var(--transition-fast)] transition-all"
               aria-label="Cari"
             >
               <Search className="w-5 h-5" />
@@ -77,11 +77,11 @@ export default function Navbar() {
             <Link
               href="/cart"
               id="nav-cart-btn"
-              className="relative p-2 text-navy-300 hover:text-gold-400 hover:bg-navy-800 rounded-lg [transition-duration:var(--transition-fast)] transition-all"
+              className="relative p-2 text-navy-900 hover:text-white hover:bg-gold-600 rounded-lg [transition-duration:var(--transition-fast)] transition-all"
               aria-label="Keranjang Belanja"
             >
               <ShoppingCart className="w-5 h-5" />
-              <span className="absolute -top-0.5 -right-0.5 bg-gold-500 text-navy-900 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+              <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
                 0
               </span>
             </Link>

@@ -1,6 +1,7 @@
 'use client'
 
-import { useForm } from 'react-hook-form'
+import { useState, useEffect } from 'react'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Input from '@/shared/ui/Input'
@@ -11,7 +12,7 @@ const shippingSchema = z.object({
   phone:      z.string().min(10, 'Nomor HP tidak valid').max(14),
   province:   z.string().min(1, 'Pilih provinsi'),
   city:       z.string().min(1, 'Pilih kota'),
-  district:   z.string().min(2, 'Kecamatan wajib diisi'),
+  district:   z.string().min(1, 'Kecamatan wajib diisi'),
   postalCode: z.string().length(5, 'Kode pos 5 digit'),
   address:    z.string().min(10, 'Alamat terlalu pendek'),
   courier:    z.string().min(1, 'Pilih kurir'),
@@ -27,9 +28,66 @@ interface ShippingFormProps {
 const COURIERS = ['JNE', 'J&T Express', 'SiCepat', 'Anteraja', 'Gojek Instant']
 
 export default function ShippingForm({ onSubmit, isLoading }: ShippingFormProps) {
-  const { register, handleSubmit, formState: { errors } } = useForm<ShippingFormValues>({
+  const { register, handleSubmit, formState: { errors }, control, setValue } = useForm<ShippingFormValues>({
     resolver: zodResolver(shippingSchema),
+    defaultValues: {
+      province: '',
+      city: '',
+      district: ''
+    }
   })
+
+  const [provinces, setProvinces] = useState<{id: string, name: string}[]>([])
+  const [cities, setCities] = useState<{id: string, name: string}[]>([])
+  const [districts, setDistricts] = useState<{id: string, name: string}[]>([])
+
+  const selectedProvince = useWatch({ control, name: 'province' })
+  const selectedCity = useWatch({ control, name: 'city' })
+
+  // Fetch Provinces on mount
+  useEffect(() => {
+    fetch('https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json')
+      .then(res => res.json())
+      .then(data => setProvinces(data))
+      .catch(err => console.error(err))
+  }, [])
+
+  // Fetch Cities when Province changes
+  useEffect(() => {
+    if (selectedProvince) {
+      const provinceId = provinces.find(p => p.name === selectedProvince)?.id
+      if (provinceId) {
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${provinceId}.json`)
+          .then(res => res.json())
+          .then(data => {
+            setCities(data)
+            setValue('city', '') // Reset city when province changes
+            setValue('district', '') // Reset district
+          })
+          .catch(err => console.error(err))
+      }
+    } else {
+      setCities([])
+    }
+  }, [selectedProvince, provinces, setValue])
+
+  // Fetch Districts when City changes
+  useEffect(() => {
+    if (selectedCity) {
+      const cityId = cities.find(c => c.name === selectedCity)?.id
+      if (cityId) {
+        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${cityId}.json`)
+          .then(res => res.json())
+          .then(data => {
+            setDistricts(data)
+            setValue('district', '') // Reset district when city changes
+          })
+          .catch(err => console.error(err))
+      }
+    } else {
+      setDistricts([])
+    }
+  }, [selectedCity, cities, setValue])
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} id="shipping-form" className="space-y-5">
@@ -73,35 +131,51 @@ export default function ShippingForm({ onSubmit, isLoading }: ShippingFormProps)
                 {...register('province')}
               >
                 <option value="">Pilih Provinsi</option>
-                <option value="DKI Jakarta">DKI Jakarta</option>
-                <option value="Jawa Barat">Jawa Barat</option>
-                <option value="Jawa Tengah">Jawa Tengah</option>
-                <option value="Jawa Timur">Jawa Timur</option>
-                <option value="Bali">Bali</option>
-                <option value="Sumatera Utara">Sumatera Utara</option>
+                {provinces.map(p => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
               </select>
               {errors.province && <p className="text-xs text-red-500">{errors.province.message}</p>}
             </div>
 
-            <Input
-              id="shipping-city"
-              label="Kota / Kabupaten"
-              placeholder="Nama kota"
-              required
-              error={errors.city?.message}
-              {...register('city')}
-            />
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="shipping-city" className="text-sm font-medium text-navy-700">
+                Kota / Kabupaten <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="shipping-city"
+                disabled={!selectedProvince || cities.length === 0}
+                className="border border-navy-200 rounded-xl px-4 py-3 text-sm text-navy-900 focus:outline-none focus:ring-2 focus:ring-gold-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                {...register('city')}
+              >
+                <option value="">Pilih Kota/Kabupaten</option>
+                {cities.map(c => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              {errors.city && <p className="text-xs text-red-500">{errors.city.message}</p>}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              id="shipping-district"
-              label="Kecamatan"
-              placeholder="Nama kecamatan"
-              required
-              error={errors.district?.message}
-              {...register('district')}
-            />
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="shipping-district" className="text-sm font-medium text-navy-700">
+                Kecamatan / Desa <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="shipping-district"
+                disabled={!selectedCity || districts.length === 0}
+                className="border border-navy-200 rounded-xl px-4 py-3 text-sm text-navy-900 focus:outline-none focus:ring-2 focus:ring-gold-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                {...register('district')}
+              >
+                <option value="">Pilih Kecamatan/Desa</option>
+                {districts.map(d => (
+                  <option key={d.id} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+              {errors.district && <p className="text-xs text-red-500">{errors.district.message}</p>}
+            </div>
+
             <Input
               id="shipping-postal"
               label="Kode Pos"

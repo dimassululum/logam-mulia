@@ -8,6 +8,7 @@ import { formatRupiah } from '@/core/lib/utils'
 import AppBar from '@/shared/ui/AppBar'
 import Accordion, { type AccordionItem } from '@/shared/ui/Accordion'
 import Button from '@/shared/ui/Button'
+import { readCurrentOrder } from '@/features/orders/order-api'
 
 /** Payment instruction steps — data separated from markup */
 const PAYMENT_INSTRUCTIONS: AccordionItem[] = [
@@ -55,6 +56,7 @@ const VA_DISPLAY = '128 0858 4559 1668'
 export default function PaymentPage() {
   const router = useRouter()
   const [copied, setCopied] = useState(false)
+  const order = readCurrentOrder()
 
   const handleCopy = () => {
     navigator.clipboard.writeText(VA_NUMBER)
@@ -73,7 +75,7 @@ export default function PaymentPage() {
         <section className="bg-white rounded-xl border border-navy-200 p-6 flex flex-col items-center justify-center text-center shadow-elevation-low">
           <h2 className="font-bold text-xs text-navy-500 mb-1 uppercase tracking-widest">Total Pembayaran</h2>
           <div className="font-heading text-3xl font-bold text-navy-900 mb-4 tracking-tight">
-            {formatRupiah(25300200)}
+            {formatRupiah(order?.grandTotalAmount ?? 0)}
           </div>
           <div className="flex items-center gap-2 bg-red-50 px-4 py-2 rounded-full text-red-600 border border-red-100">
             <Clock className="w-5 h-5" />
