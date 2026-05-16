@@ -65,46 +65,14 @@ interface CompanyProfileItem {
 
 type CompanyProfileMap = Record<string, CompanyProfileItem | undefined>
 
-const fallbackBanners = [
-  {
-    id: 'banner-1',
-    title: 'Promo Beli Emas Online',
-    thumbnailUrl: '/images/banner-1.png',
-    status: 'active',
-    expiresAt: '2026-12-31',
-  },
-  {
-    id: 'banner-2',
-    title: 'Gempita Hari Raya',
-    thumbnailUrl: '/images/banner-2.png',
-    status: 'active',
-    expiresAt: '2026-06-30',
-  },
-  {
-    id: 'banner-3',
-    title: 'Simfoni Ibu Pertiwi',
-    thumbnailUrl: '/images/banner-3.jpg',
-    status: 'inactive',
-    expiresAt: '2026-04-15',
-  },
-]
-
-const fallbackSocialMedia: HomeFooterSocial[] = [
-  { id: 'social-instagram', name: 'Instagram', status: 'active', link: 'https://instagram.com/logammuliaantam' },
-  { id: 'social-facebook', name: 'Facebook', status: 'active', link: 'https://facebook.com/logammuliaantam' },
-  { id: 'social-shopee', name: 'Shopee', status: 'active', link: 'https://shopee.co.id/logammuliaantam' },
-  { id: 'social-tokopedia', name: 'Tokopedia', status: 'active', link: 'https://tokopedia.com/logammuliaantam' },
-]
-
-const fallbackFooter: HomeFooterProfile = {
-  companyName: 'Logam Mulia Antam',
-  companyDescription: 'Distributor resmi logam mulia Antam, menyediakan solusi investasi emas yang aman dan transparan.',
+const emptyFooter: HomeFooterProfile = {
+  companyName: '',
+  companyDescription: '',
   companyLogoPreview: '',
-  address:
-    'Unit Bisnis Pengolahan dan Pemurnian Logam Mulia Gedung Graha Dipta. Jalan Pemuda, No.1 Jatinegara Kaum, Pulo Gadung, Jakarta 13250',
-  googleMapsLink: 'https://maps.google.com/?q=Graha+Dipta+Pulogadung',
-  whatsAppContact: '081212345678',
-  socialMedia: fallbackSocialMedia,
+  address: '',
+  googleMapsLink: '',
+  whatsAppContact: '',
+  socialMedia: [],
 }
 
 async function fetchApi<T>(path: string, fallback: T): Promise<T> {
@@ -193,7 +161,7 @@ export async function getHomeData() {
     fetchApi<CompanyProfileMap>('/company-profile', {}),
   ])
 
-  const profileBanners = readProfileJson(companyProfile, 'homepage_banners', fallbackBanners)
+  const profileBanners = readProfileJson<any[]>(companyProfile, 'homepage_banners', [])
   const visibleBanners = profileBanners
     .filter(isBannerVisible)
     .map((banner: any) => ({
@@ -207,24 +175,20 @@ export async function getHomeData() {
     products: products.map(mapProduct),
     boutiques: boutiques.map(mapBoutique),
     articles: articles.map(mapArticle),
-    banners: visibleBanners.length > 0 ? visibleBanners : fallbackBanners.filter(isBannerVisible).map((banner) => ({
-      id: banner.id,
-      title: banner.title,
-      imageUrl: banner.thumbnailUrl,
-    })),
+    banners: visibleBanners,
     hero: {
-      status: readProfileText(companyProfile, 'hero_video_status', 'active') === 'inactive' ? 'inactive' : 'active',
+      status: readProfileText(companyProfile, 'hero_video_status', 'inactive') === 'active' ? 'active' : 'inactive',
       buttonTitle: readProfileText(companyProfile, 'hero_video_button_title', 'Beli Emas Disini'),
-      videoUrl: readProfileText(companyProfile, 'hero_video_preview_url', '/videos/home-hero-latest.mp4'),
+      videoUrl: readProfileText(companyProfile, 'hero_video_preview_url', ''),
     } satisfies HomeHeroProfile,
     footer: {
-      companyName: readProfileText(companyProfile, 'footer_company_name', fallbackFooter.companyName),
-      companyDescription: readProfileText(companyProfile, 'footer_company_description', fallbackFooter.companyDescription),
-      companyLogoPreview: readProfileText(companyProfile, 'footer_company_logo_preview', fallbackFooter.companyLogoPreview),
-      address: readProfileText(companyProfile, 'footer_address', fallbackFooter.address),
-      googleMapsLink: readProfileText(companyProfile, 'footer_google_maps_link', fallbackFooter.googleMapsLink),
-      whatsAppContact: readProfileText(companyProfile, 'footer_whatsapp_contact', fallbackFooter.whatsAppContact),
-      socialMedia: readProfileJson(companyProfile, 'footer_social_media', fallbackFooter.socialMedia),
+      companyName: readProfileText(companyProfile, 'footer_company_name', emptyFooter.companyName),
+      companyDescription: readProfileText(companyProfile, 'footer_company_description', emptyFooter.companyDescription),
+      companyLogoPreview: readProfileText(companyProfile, 'footer_company_logo_preview', emptyFooter.companyLogoPreview),
+      address: readProfileText(companyProfile, 'footer_address', emptyFooter.address),
+      googleMapsLink: readProfileText(companyProfile, 'footer_google_maps_link', emptyFooter.googleMapsLink),
+      whatsAppContact: readProfileText(companyProfile, 'footer_whatsapp_contact', emptyFooter.whatsAppContact),
+      socialMedia: readProfileJson(companyProfile, 'footer_social_media', emptyFooter.socialMedia),
     } satisfies HomeFooterProfile,
   }
 }

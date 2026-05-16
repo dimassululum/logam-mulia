@@ -41,60 +41,6 @@ const features = [
   },
 ]
 
-const boutiques = [
-  { city: 'Jakarta', address: 'Pulogadung, Jakarta Timur' },
-  { city: 'Surabaya', address: 'Jl. Pemuda No. 1' },
-  { city: 'Bandung', address: 'Jl. Braga, Sumur Bandung' },
-  { city: 'Medan', address: 'Jl. S. Parman' },
-]
-
-const articles = [
-  {
-    id: 'mengapa-emas-safe-haven',
-    tag: 'Panduan',
-    title: 'Mengapa Emas Adalah "Safe Haven" Terbaik?',
-    desc: 'Pelajari alasan utama mengapa investor profesional selalu menyisihkan portofolio dalam bentuk emas...',
-  },
-  {
-    id: 'strategi-dollar-cost-averaging',
-    tag: 'Strategi',
-    title: 'Strategi Dollar Cost Averaging Pada Emas',
-    desc: 'Cara cerdas menabung emas tanpa harus menunggu harga turun. Konsistensi adalah kunci...',
-  },
-  {
-    id: 'verifikasi-sertifikat-antam',
-    tag: 'Keamanan',
-    title: 'Verifikasi Keaslian Sertifikat Antam',
-    desc: 'Kenali ciri-ciri fisik dan fitur keamanan terbaru pada produk CertiCard investasi Anda...',
-  },
-]
-
-const popularProducts = [
-  { id: '1', slug: 'emas-antam-10g', name: 'Emas Antam 10g', price: 'Rp 11.420.000', badge: 'Terlaris', sold: '500+', imageUrl: '' },
-  { id: '2', slug: 'emas-antam-1g', name: 'Emas Antam 1g', price: 'Rp 1.142.000', badge: 'Stok Terbatas', sold: '1rb+', originalPrice: 'Rp 1.202.000', imageUrl: '' },
-  { id: '3', slug: 'emas-antam-100g', name: 'Emas Antam 100g', price: 'Rp 114.200.000', badge: '', sold: '100+', imageUrl: '' },
-  { id: '4', slug: 'gift-series-0-5g', name: 'Gift Series 0.5g', price: 'Rp 650.000', badge: '', sold: '300+', imageUrl: '' },
-]
-
-const fallbackPriceCards = [
-  {
-    label: 'Emas',
-    tone: 'gold',
-    price: 'Rp2.795.000,00',
-    meta: 'Harga Terakhir: Rp2.796.000,00',
-    movement: 'down',
-    movementLabel: 'Rp-1,000.00',
-  },
-  {
-    label: 'Perak',
-    tone: 'silver',
-    price: 'Rp47.450,00',
-    meta: 'Harga Terakhir: Rp47.300,00',
-    movement: 'up',
-    movementLabel: 'Rp150.00',
-  },
-]
-
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -118,7 +64,7 @@ function formatLastUpdated(products: HomeProduct[]) {
     .filter((time) => Number.isFinite(time))
     .sort((left, right) => right - left)[0]
 
-  if (!latest) return 'Perubahan terakhir: 04 May 2026 08:54:00'
+  if (!latest) return 'Perubahan terakhir: belum tersedia dari database'
 
   return `Perubahan terakhir: ${new Intl.DateTimeFormat('id-ID', {
     day: '2-digit',
@@ -143,7 +89,7 @@ function findMetalProduct(products: HomeProduct[], keywords: string[]) {
 }
 
 function buildPriceCards(products: HomeProduct[]) {
-  if (products.length === 0) return fallbackPriceCards
+  if (products.length === 0) return []
 
   const goldProduct = findMetalProduct(products, ['emas', 'gold', 'antam']) || products[0]
   const silverProduct = findMetalProduct(products, ['perak', 'silver'])
@@ -168,8 +114,6 @@ function buildPriceCards(products: HomeProduct[]) {
       movement: 'flat',
       movementLabel: 'Harga dari admin',
     })
-  } else {
-    cards.push(fallbackPriceCards[1])
   }
 
   return cards
@@ -187,8 +131,9 @@ export default async function HomePage() {
   const homeData = await getHomeData()
   const priceCards = buildPriceCards(homeData.products)
 
-  const displayProducts = homeData.products.length > 0
-    ? homeData.products.slice(0, 4).map((p) => ({
+  const displayProducts = homeData.products
+    .slice(0, 4)
+    .map((p) => ({
         id: p.id,
         slug: p.slug,
         name: p.name,
@@ -198,26 +143,25 @@ export default async function HomePage() {
         originalPrice: '',
         imageUrl: p.imageUrl,
       }))
-    : popularProducts;
 
-  const displayBoutiques = homeData.boutiques.length > 0
-    ? homeData.boutiques.slice(0, 4).map((b) => ({
+  const displayBoutiques = homeData.boutiques
+    .slice(0, 4)
+    .map((b) => ({
         id: b.id,
         city: b.city || b.name,
         address: b.address,
         googleMapsUrl: b.googleMapsUrl,
       }))
-    : boutiques;
 
-  const displayArticles = homeData.articles.length > 0
-    ? homeData.articles.slice(0, 3).map((a) => ({
+  const displayArticles = homeData.articles
+    .slice(0, 3)
+    .map((a) => ({
         id: a.slug,
         tag: 'Artikel',
         title: a.title,
         desc: a.excerpt,
         coverUrl: a.coverUrl,
       }))
-    : articles;
 
   return (
     <>
@@ -260,7 +204,7 @@ export default async function HomePage() {
 
           {/* Stacked Content */}
           <div className="flex flex-col">
-            {priceCards.map((card) => (
+            {priceCards.length > 0 ? priceCards.map((card) => (
               <div key={card.label} className={`${card.tone === 'gold' ? 'bg-[#d4af37]' : 'bg-[#b0b5b9]'} p-6 text-white relative overflow-hidden`}>
                 <div className="relative z-10">
                   <h3 className="font-serif text-[42px] font-bold mb-4 drop-shadow-sm leading-none">{card.label}</h3>
@@ -281,7 +225,11 @@ export default async function HomePage() {
                 </div>
                 <div className="absolute -right-10 top-10 w-48 h-32 bg-white/10 rounded-2xl transform rotate-[15deg] pointer-events-none"></div>
               </div>
-            ))}
+            )) : (
+              <div className="bg-[#2a4066] p-6 text-white">
+                <p className="text-sm font-semibold">Harga belum tersedia dari database.</p>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -304,8 +252,9 @@ export default async function HomePage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
-            {displayProducts.map((product: any) => (
+          {displayProducts.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-gutter">
+              {displayProducts.map((product: any) => (
               <Link
                 key={product.id}
                 href={`/products/${product.slug}`}
@@ -330,8 +279,13 @@ export default async function HomePage() {
                   <p className="text-[10px] text-navy-600/70 font-medium">Terjual {product.sold}</p>
                 </div>
               </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-navy-100 bg-white p-4 text-sm font-medium text-navy-600">
+              Produk belum tersedia dari database.
+            </p>
+          )}
         </div>
       </section>
 
@@ -380,8 +334,9 @@ export default async function HomePage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {displayBoutiques.map((boutique: any) => (
+          {displayBoutiques.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {displayBoutiques.map((boutique: any) => (
               <a
                 key={boutique.id || boutique.city}
                 href={boutique.googleMapsUrl || '/boutiques'}
@@ -394,8 +349,13 @@ export default async function HomePage() {
                 <h5 className="font-bold text-navy-900 text-sm">{boutique.city}</h5>
                 <p className="text-[11px] text-navy-600">{boutique.address}</p>
               </a>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-navy-100 bg-white p-4 text-sm font-medium text-navy-600">
+              Butik belum tersedia dari database.
+            </p>
+          )}
         </div>
       </section>
 
@@ -405,8 +365,9 @@ export default async function HomePage() {
         </div>
 
         <div className="container-main">
-          <div className="flex gap-gutter overflow-x-auto no-scrollbar snap-x snap-mandatory pb-4">
-            {displayArticles.map((article: any) => (
+          {displayArticles.length > 0 ? (
+            <div className="flex gap-gutter overflow-x-auto no-scrollbar snap-x snap-mandatory pb-4">
+              {displayArticles.map((article: any) => (
               <article
                 key={article.title}
                 className="min-w-[85%] md:min-w-[30%] snap-center card-surface rounded-2xl overflow-hidden flex flex-col shadow-elevation-mid"
@@ -437,8 +398,13 @@ export default async function HomePage() {
                   </Link>
                 </div>
               </article>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-navy-100 bg-white p-4 text-sm font-medium text-navy-600">
+              Artikel belum tersedia dari database.
+            </p>
+          )}
         </div>
       </section>
 

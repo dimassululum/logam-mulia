@@ -1,8 +1,13 @@
 import axios from 'axios';
 
-const baseURL =
-  `${process.env.NEXT_PUBLIC_API_URL}/api`
-  || 'http://localhost:5000/api';
+function resolveApiBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+  const baseUrl = configuredUrl || 'http://localhost:5000/api';
+
+  return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+}
+
+const baseURL = resolveApiBaseUrl();
 
 export const apiClient = axios.create({
   baseURL,

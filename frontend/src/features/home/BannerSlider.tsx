@@ -4,16 +4,12 @@ import { useState, useEffect, useRef } from 'react'
 import { cn } from '@/core/lib/utils'
 import type { HomeBanner } from '@/features/home/home-api'
 
-const fallbackBanners: HomeBanner[] = [
-  { id: 'banner-1', imageUrl: '/images/banner-1.png', title: 'Promo Beli Emas Online' },
-  { id: 'banner-2', imageUrl: '/images/banner-2.png', title: 'Gempita Hari Raya' },
-  { id: 'banner-3', imageUrl: '/images/banner-3.jpg', title: 'Simfoni Ibu Pertiwi' },
-]
-
-export default function BannerSlider({ banners = fallbackBanners }: { banners?: HomeBanner[] }) {
+export default function BannerSlider({ banners = [] }: { banners?: HomeBanner[] }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const visibleBanners = banners.length > 0 ? banners : fallbackBanners
+  const visibleBanners = banners.filter((banner) => banner.imageUrl)
+
+  if (visibleBanners.length === 0) return null
 
   useEffect(() => {
     const interval = setInterval(() => {

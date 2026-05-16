@@ -8,13 +8,12 @@ import type { HomeFooterProfile } from '@/features/home/home-api'
 import { buildWhatsAppLink } from '@/core/lib/contact'
 
 const defaultFooterProfile: HomeFooterProfile = {
-  companyName: 'Logam Mulia Antam',
-  companyDescription: 'Distributor resmi logam mulia Antam, menyediakan solusi investasi emas yang aman dan transparan.',
+  companyName: '',
+  companyDescription: '',
   companyLogoPreview: '',
-  address:
-    'Unit Bisnis Pengolahan dan Pemurnian Logam Mulia Gedung Graha Dipta. Jalan Pemuda, No.1 Jatinegara Kaum, Pulo Gadung, Jakarta 13250',
-  googleMapsLink: 'https://maps.google.com/?q=Graha+Dipta+Pulogadung',
-  whatsAppContact: '081212345678',
+  address: '',
+  googleMapsLink: '',
+  whatsAppContact: '',
   socialMedia: [],
 }
 
