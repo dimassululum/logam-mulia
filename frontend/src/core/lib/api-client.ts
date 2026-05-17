@@ -1,10 +1,8 @@
 import axios from 'axios';
+import { resolvePublicApiBaseUrl } from './public-url';
 
 function resolveApiBaseUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
-  const baseUrl = configuredUrl || 'http://localhost:5000/api';
-
-  return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+  return resolvePublicApiBaseUrl();
 }
 
 const baseURL = resolveApiBaseUrl();

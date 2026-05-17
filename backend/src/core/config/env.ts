@@ -43,6 +43,10 @@ export const env = {
   MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10),
 
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
+  FRONTEND_URLS: (process.env.FRONTEND_URLS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 
   get IS_PRODUCTION() {
     return this.NODE_ENV === 'production';

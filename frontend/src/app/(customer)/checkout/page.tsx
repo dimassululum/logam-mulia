@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, HeadphonesIcon, Lock, Mail, MapPin, Plus, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
+import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 import AppBar from '@/shared/ui/AppBar'
 import Button from '@/shared/ui/Button'
 import RadioCard from '@/shared/ui/RadioCard'
@@ -75,6 +76,8 @@ const ZERO_EKSPEDISI_OPTIONS: EkspedisiOption[] = [
   { id: 'jnt-free', name: 'J&T Express', time: '-', price: 0, courier: 'JNT', service: 'Reguler' },
 ]
 
+const API_URL = resolvePublicApiBaseUrl()
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
   const router = useRouter()
@@ -120,7 +123,7 @@ export default function CheckoutPage() {
 
     async function loadBoutiques() {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/boutiques?isActive=true`, { cache: 'no-store' })
+        const response = await fetch(`${API_URL}/boutiques?isActive=true`, { cache: 'no-store' })
         const json = await response.json()
         if (!alive) return
         setButikOptions((json.data || []).map((boutique: any) => ({
@@ -166,8 +169,7 @@ export default function CheckoutPage() {
       setIsLoadingDestinations(true)
       setDestinationError('')
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-        const response = await fetch(`${apiBase}/checkout/destinations/provinces`, { cache: 'no-store' })
+        const response = await fetch(`${API_URL}/checkout/destinations/provinces`, { cache: 'no-store' })
         const json = await response.json()
         if (!response.ok) throw new Error(json.message || 'Gagal memuat provinsi RajaOngkir.')
         if (!alive) return
@@ -197,8 +199,7 @@ export default function CheckoutPage() {
       setIsLoadingDestinations(true)
       setDestinationError('')
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-        const response = await fetch(`${apiBase}/checkout/destinations/cities?provinceId=${selectedProvinceId}`, { cache: 'no-store' })
+        const response = await fetch(`${API_URL}/checkout/destinations/cities?provinceId=${selectedProvinceId}`, { cache: 'no-store' })
         const json = await response.json()
         if (!response.ok) throw new Error(json.message || 'Gagal memuat kota/kabupaten RajaOngkir.')
         if (!alive) return
@@ -227,8 +228,7 @@ export default function CheckoutPage() {
       setIsLoadingDestinations(true)
       setDestinationError('')
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-        const response = await fetch(`${apiBase}/checkout/destinations/districts?cityId=${selectedCityId}`, { cache: 'no-store' })
+        const response = await fetch(`${API_URL}/checkout/destinations/districts?cityId=${selectedCityId}`, { cache: 'no-store' })
         const json = await response.json()
         if (!response.ok) throw new Error(json.message || 'Gagal memuat kecamatan RajaOngkir.')
         if (!alive) return
@@ -257,8 +257,7 @@ export default function CheckoutPage() {
       setIsLoadingDestinations(true)
       setDestinationError('')
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-        const response = await fetch(`${apiBase}/checkout/destinations/subdistricts?districtId=${selectedDistrictId}`, { cache: 'no-store' })
+        const response = await fetch(`${API_URL}/checkout/destinations/subdistricts?districtId=${selectedDistrictId}`, { cache: 'no-store' })
         const json = await response.json()
         if (!response.ok) throw new Error(json.message || 'Gagal memuat kelurahan RajaOngkir.')
         if (!alive) return
@@ -297,7 +296,7 @@ export default function CheckoutPage() {
         if (selectedAddress.village) params.set('destinationVillage', selectedAddress.village)
         if (selectedAddress.postalCode) params.set('destinationPostalCode', selectedAddress.postalCode)
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/checkout/shipping-rates?${params.toString()}`, { cache: 'no-store' })
+        const response = await fetch(`${API_URL}/checkout/shipping-rates?${params.toString()}`, { cache: 'no-store' })
         const json = await response.json()
         if (!response.ok) throw new Error(json.message)
         if (!alive) return

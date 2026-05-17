@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { CalendarDays, ChevronLeft, Share2 } from 'lucide-react'
-import { resolvePublicAssetUrl } from '@/core/lib/public-url'
+import { resolvePublicApiBaseUrl, resolvePublicAssetUrl } from '@/core/lib/public-url'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_URL = resolvePublicApiBaseUrl()
 
 interface ArticleDetail {
   id: string

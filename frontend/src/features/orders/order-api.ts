@@ -3,8 +3,9 @@ import type { OrderStatus } from '@/core/types'
 import type { LocalCartItem, ClaimedVoucher } from '@/features/cart/cart-storage'
 import type { GuestCheckoutAddress, GuestCheckoutProfile } from '@/features/checkout/guestCheckout'
 import type { AdminOrderDetailRecord, AdminOrderRecord } from '@/features/admin/admin-management-data'
+import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_URL = resolvePublicApiBaseUrl()
 const CURRENT_ORDER_KEY = 'lm-current-order'
 
 interface CreateOrderInput {

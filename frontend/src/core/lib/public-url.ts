@@ -1,7 +1,12 @@
 const DEFAULT_API_URL = 'http://localhost:5000/api'
 
-function getApiAssetOrigin() {
+export function resolvePublicApiBaseUrl() {
   const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '') || DEFAULT_API_URL
+  return configuredUrl.endsWith('/api') ? configuredUrl : `${configuredUrl}/api`
+}
+
+function getApiAssetOrigin() {
+  const configuredUrl = resolvePublicApiBaseUrl()
 
   try {
     const url = new URL(configuredUrl)

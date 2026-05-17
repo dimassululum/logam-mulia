@@ -26,7 +26,11 @@ import metalPriceRoutes from '../features/metal-prices/routes/metal-price.routes
 const app = express();
 const allowedOrigins = [
   env.FRONTEND_URL,
+  ...env.FRONTEND_URLS,
   ...(env.IS_DEVELOPMENT ? ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003'] : []),
+];
+const allowedOriginPatterns = [
+  /^https:\/\/.*\.vercel\.app$/,
 ];
 
 // ─── Security ──────────────────────────────────────────────────────────────
@@ -35,7 +39,17 @@ app.use(helmet());
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOriginPatterns.some((pattern) => pattern.test(origin))) {
         callback(null, true);
         return;
       }

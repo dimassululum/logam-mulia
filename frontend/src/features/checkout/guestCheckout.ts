@@ -1,3 +1,5 @@
+import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
+
 export const CHECKOUT_GUEST_STORAGE_KEY = 'skripsi-finance.checkout.guest'
 
 export interface GuestCheckoutAddress {
@@ -24,7 +26,7 @@ export interface GuestCheckoutProfile {
   ktpUrl?: string | null
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_URL = resolvePublicApiBaseUrl()
 
 export async function lookupGuestProfile(email: string): Promise<GuestCheckoutProfile> {
   const normalizedEmail = email.trim().toLowerCase()

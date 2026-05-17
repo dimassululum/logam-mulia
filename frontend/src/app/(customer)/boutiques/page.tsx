@@ -1,7 +1,8 @@
 import { Map, MapPin, MessageCircle } from 'lucide-react'
 import { buildWhatsAppLink } from '@/core/lib/contact'
+import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_URL = resolvePublicApiBaseUrl()
 
 interface BoutiqueRecord {
   id: string

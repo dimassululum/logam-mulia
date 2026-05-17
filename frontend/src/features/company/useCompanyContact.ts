@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { buildWhatsAppLink, DEFAULT_WHATSAPP_PHONE } from '@/core/lib/contact'
+import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_URL = resolvePublicApiBaseUrl()
 
 export function useCompanyWhatsAppLink(message?: string) {
   const [phone, setPhone] = useState(DEFAULT_WHATSAPP_PHONE)
