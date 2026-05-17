@@ -1,3 +1,5 @@
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
 export interface HomeProduct {
@@ -162,7 +164,7 @@ function mapProduct(product: any): HomeProduct {
     weightGram: toNumber(product.weightGram),
     stock: toNumber(product.stock),
     categoryName: product.category?.name || 'Lainnya',
-    imageUrl: primaryImage,
+    imageUrl: resolvePublicAssetUrl(primaryImage),
     updatedAt: product.updatedAt || product.createdAt || '',
   }
 }
@@ -213,7 +215,7 @@ function mapArticle(article: any): HomeArticle {
     slug: article.slug || article.id,
     title: article.title,
     excerpt: article.excerpt || '',
-    coverUrl: article.coverUrl || '',
+    coverUrl: resolvePublicAssetUrl(article.coverUrl || ''),
     publishedAt: article.publishedAt || article.createdAt || '',
   }
 }
@@ -233,7 +235,7 @@ export async function getHomeData() {
     .map((banner: any) => ({
       id: banner.id,
       title: banner.title,
-      imageUrl: banner.thumbnailUrl,
+      imageUrl: resolvePublicAssetUrl(banner.thumbnailUrl),
     }))
     .filter((banner: HomeBanner) => banner.imageUrl)
 
@@ -246,12 +248,12 @@ export async function getHomeData() {
     hero: {
       status: readProfileText(companyProfile, 'hero_video_status', 'inactive') === 'active' ? 'active' : 'inactive',
       buttonTitle: readProfileText(companyProfile, 'hero_video_button_title', 'Beli Emas Disini'),
-      videoUrl: readProfileText(companyProfile, 'hero_video_preview_url', ''),
+      videoUrl: resolvePublicAssetUrl(readProfileText(companyProfile, 'hero_video_preview_url', '')),
     } satisfies HomeHeroProfile,
     footer: {
       companyName: readProfileText(companyProfile, 'footer_company_name', emptyFooter.companyName),
       companyDescription: readProfileText(companyProfile, 'footer_company_description', emptyFooter.companyDescription),
-      companyLogoPreview: readProfileText(companyProfile, 'footer_company_logo_preview', emptyFooter.companyLogoPreview),
+      companyLogoPreview: resolvePublicAssetUrl(readProfileText(companyProfile, 'footer_company_logo_preview', emptyFooter.companyLogoPreview)),
       address: readProfileText(companyProfile, 'footer_address', emptyFooter.address),
       googleMapsLink: readProfileText(companyProfile, 'footer_google_maps_link', emptyFooter.googleMapsLink),
       whatsAppContact: readProfileText(companyProfile, 'footer_whatsapp_contact', emptyFooter.whatsAppContact),

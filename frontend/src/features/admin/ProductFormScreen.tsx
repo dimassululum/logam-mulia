@@ -8,6 +8,7 @@ import { adminSelectClassName, ManagementSection } from '@/features/admin/admin-
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Button, Card, Input } from '@/shared/ui'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 
 interface ProductFormScreenProps {
   productId?: string
@@ -75,7 +76,7 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
             description: p.description || '',
           })
           if (p.images && p.images.length > 0) {
-            setImageUrl(p.images[0].imageUrl)
+            setImageUrl(resolvePublicAssetUrl(p.images[0].imageUrl))
           }
         })
         .catch(err => {

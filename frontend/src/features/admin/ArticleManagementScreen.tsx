@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import {
   formatAdminDateShort,
   type AdminArticleRecord,
@@ -31,7 +32,7 @@ export default function ArticleManagementScreen() {
           id: article.id,
           slug: article.slug,
           title: article.title,
-          thumbnailUrl: article.coverUrl || '',
+          thumbnailUrl: resolvePublicAssetUrl(article.coverUrl || ''),
           contentHtml: article.content,
           publishedAt: article.publishedAt || article.createdAt,
           status: article.isPublished ? 'active' : 'inactive',

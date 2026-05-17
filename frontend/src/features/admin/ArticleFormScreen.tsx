@@ -9,6 +9,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import { ArrowLeft, ImagePlus, Save } from 'lucide-react'
 import { cn } from '@/core/lib/utils'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import {
   formatAdminDateShort,
   type AdminArticleRecord,
@@ -58,7 +59,7 @@ function mapArticle(article: any): AdminArticleRecord {
     id: article.id,
     slug: article.slug,
     title: article.title,
-    thumbnailUrl: article.coverUrl || '',
+    thumbnailUrl: resolvePublicAssetUrl(article.coverUrl || ''),
     contentHtml: article.content,
     publishedAt: article.publishedAt || article.createdAt,
     status: article.isPublished ? 'active' : 'inactive',

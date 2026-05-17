@@ -21,9 +21,32 @@ export const checkoutCustomerBodySchema = z.object({
 
 export const shippingRatesSchema = z.object({
   destinationCity: z.string().min(1, 'Kota tujuan wajib diisi'),
+  destinationDistrict: z.string().optional(),
+  destinationVillage: z.string().optional(),
+  destinationPostalCode: z.string().optional(),
   weightGram: z.coerce.number().int().positive('Berat pengiriman wajib diisi'),
+});
+
+export const destinationSearchSchema = z.object({
+  search: z.string().min(2, 'Kata kunci minimal 2 karakter'),
+});
+
+export const cityByProvinceSchema = z.object({
+  provinceId: z.coerce.number().int().positive('Province ID tidak valid'),
+});
+
+export const districtByCitySchema = z.object({
+  cityId: z.coerce.number().int().positive('City ID tidak valid'),
+});
+
+export const subdistrictByDistrictSchema = z.object({
+  districtId: z.coerce.number().int().positive('District ID tidak valid'),
 });
 
 export type CheckoutCustomerQuery = z.infer<typeof checkoutCustomerQuerySchema>;
 export type CheckoutCustomerBody = z.infer<typeof checkoutCustomerBodySchema>;
 export type ShippingRatesInput = z.infer<typeof shippingRatesSchema>;
+export type DestinationSearchInput = z.infer<typeof destinationSearchSchema>;
+export type CityByProvinceInput = z.infer<typeof cityByProvinceSchema>;
+export type DistrictByCityInput = z.infer<typeof districtByCitySchema>;
+export type SubdistrictByDistrictInput = z.infer<typeof subdistrictByDistrictSchema>;

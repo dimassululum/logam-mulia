@@ -6,7 +6,44 @@ import { env } from '../../../core/config/env';
 import { BadRequestError } from '../../../core/utils/errors';
 import type { CheckoutCustomerBody } from '../schema/checkout.schema';
 
-const DEFAULT_SHIPPING_ORIGIN_CITY = 'Jakarta Timur';
+const SHIPPING_COURIERS = [
+  { code: 'jne', courier: 'JNE', name: 'JNE' },
+  { code: 'jnt', courier: 'JNT', name: 'J&T Express' },
+] as const;
+
+type ShippingRateRequest = {
+  destinationCity: string;
+  destinationDistrict?: string;
+  destinationVillage?: string;
+  destinationPostalCode?: string;
+  weightGram: number;
+};
+
+type ShippingRate = {
+  id: string;
+  courier: string;
+  name: string;
+  service: string;
+  description: string;
+  price: number;
+  etd: string;
+};
+
+type RajaOngkirDestination = {
+  id: number;
+  label: string;
+  province: string;
+  city: string;
+  district: string;
+  village: string;
+  postalCode: string;
+};
+
+type RajaOngkirNamedItem = {
+  id: number;
+  name: string;
+  zipCode?: string;
+};
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -129,8 +166,20 @@ export async function saveCheckoutCustomer(input: CheckoutCustomerBody, ktpFile?
   return lookupCheckoutCustomer(email);
 }
 
-function normalizeText(value: string) {
-  return value.toLowerCase().replace(/^(kota|kabupaten|kab\.?)\s+/i, '').trim();
+function normalizeText(value?: string | null) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/^(kota|kabupaten|kab\.?)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function compact(values: Array<string | undefined | null>) {
+  return values.map((value) => value?.trim()).filter(Boolean) as string[];
+}
+
+function unique(values: string[]) {
+  return Array.from(new Set(values));
 }
 
 async function fetchRajaOngkir(path: string, init?: RequestInit) {
@@ -148,53 +197,210 @@ async function fetchRajaOngkir(path: string, init?: RequestInit) {
       signal: init?.signal || controller.signal,
       headers: {
         key: env.RAJAONGKIR_API_KEY,
+        Authorization: `Bearer ${env.RAJAONGKIR_API_KEY}`,
         ...(init?.headers || {}),
       },
     });
-  } catch {
+  } catch (error) {
+    console.error('RajaOngkir connection error:', error);
     throw new BadRequestError('Gagal terhubung ke RajaOngkir. Periksa koneksi internet backend atau status layanan RajaOngkir.');
   } finally {
     clearTimeout(timeout);
   }
-  const json = await response.json() as any;
-  if (!response.ok || json.rajaongkir?.status?.code >= 400) {
-    throw new BadRequestError(json.rajaongkir?.status?.description || 'Gagal mengambil data RajaOngkir');
-  }
-  return json.rajaongkir;
-}
 
-async function findRajaOngkirCityId(cityName: string) {
-  const keyword = normalizeText(cityName);
-  const data = await fetchRajaOngkir('/city');
-  const cities = data.results || [];
-  const city = cities.find((item: any) => normalizeText(`${item.type} ${item.city_name}`) === keyword)
-    || cities.find((item: any) => normalizeText(item.city_name) === keyword)
-    || cities.find((item: any) => normalizeText(item.city_name).includes(keyword) || keyword.includes(normalizeText(item.city_name)));
-
-  if (!city) {
-    throw new BadRequestError('Kota tujuan belum ditemukan di RajaOngkir.');
+  const json = await response.json().catch(() => null) as any;
+  const statusCode = json?.meta?.code || json?.rajaongkir?.status?.code;
+  if (!response.ok || statusCode >= 400) {
+    const message = json?.meta?.message || json?.rajaongkir?.status?.description || 'Gagal mengambil data RajaOngkir';
+    throw new BadRequestError(message);
   }
 
-  return city.city_id;
+  return json;
 }
 
-async function resolveOriginCityId() {
-  return findRajaOngkirCityId(DEFAULT_SHIPPING_ORIGIN_CITY);
+function destinationSearchTerms(input: ShippingRateRequest | { destinationCity: string }) {
+  const city = input.destinationCity;
+  const district = 'destinationDistrict' in input ? input.destinationDistrict : undefined;
+  const village = 'destinationVillage' in input ? input.destinationVillage : undefined;
+  const postalCode = 'destinationPostalCode' in input ? input.destinationPostalCode : undefined;
+
+  return unique([
+    ...compact([postalCode]),
+    compact([village, district, city]).join(' '),
+    compact([district, city]).join(' '),
+    city,
+  ].filter(Boolean));
 }
 
-export async function getShippingRates(destinationCity: string, weightGram: number) {
-  void destinationCity;
-  void weightGram;
+function scoreDestination(item: any, input: ShippingRateRequest | { destinationCity: string }) {
+  const city = input.destinationCity;
+  const district = 'destinationDistrict' in input ? input.destinationDistrict : undefined;
+  const village = 'destinationVillage' in input ? input.destinationVillage : undefined;
+  const postalCode = 'destinationPostalCode' in input ? input.destinationPostalCode : undefined;
 
-  return [
-    {
-      id: 'temporary-free-shipping',
-      courier: 'EKSPEDISI',
-      name: 'Ekspedisi',
-      service: 'Ongkir sementara',
-      description: 'Ongkir sementara Rp0',
-      price: 0,
-      etd: '-',
-    },
-  ];
+  let score = 0;
+  if (postalCode && String(item.zip_code || '') === postalCode) score += 20;
+  if (normalizeText(item.city_name) === normalizeText(city)) score += 10;
+  if (district && normalizeText(item.district_name) === normalizeText(district)) score += 6;
+  if (village && normalizeText(item.subdistrict_name) === normalizeText(village)) score += 4;
+
+  const label = normalizeText(item.label);
+  for (const part of compact([village, district, city])) {
+    if (label.includes(normalizeText(part))) score += 1;
+  }
+
+  return score;
+}
+
+async function findRajaOngkirDestinationId(input: ShippingRateRequest | { destinationCity: string }) {
+  for (const term of destinationSearchTerms(input)) {
+    const params = new URLSearchParams({ search: term, limit: '10', offset: '0' });
+    const json = await fetchRajaOngkir(`/destination/domestic-destination?${params.toString()}`);
+    const destinations = Array.isArray(json.data) ? json.data : [];
+    if (destinations.length > 0) {
+      const [best] = destinations.sort((a: any, b: any) => scoreDestination(b, input) - scoreDestination(a, input));
+      return best.id;
+    }
+  }
+
+  throw new BadRequestError('Kota tujuan belum ditemukan di RajaOngkir.');
+}
+
+function mapDestination(item: any): RajaOngkirDestination {
+  return {
+    id: Number(item.id),
+    label: String(item.label || '').trim(),
+    province: String(item.province_name || '').trim(),
+    city: String(item.city_name || '').trim(),
+    district: String(item.district_name || '').trim(),
+    village: String(item.subdistrict_name || '').trim(),
+    postalCode: String(item.zip_code || '').trim(),
+  };
+}
+
+function mapNamedItem(item: any): RajaOngkirNamedItem {
+  return {
+    id: Number(item.id),
+    name: String(item.name || '').trim(),
+    zipCode: item.zip_code ? String(item.zip_code).trim() : undefined,
+  };
+}
+
+export async function getRajaOngkirProvinces() {
+  const json = await fetchRajaOngkir('/destination/province');
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows.map(mapNamedItem);
+}
+
+export async function getRajaOngkirCities(provinceId: number) {
+  const json = await fetchRajaOngkir(`/destination/city/${provinceId}`);
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows.map(mapNamedItem);
+}
+
+export async function getRajaOngkirDistricts(cityId: number) {
+  const json = await fetchRajaOngkir(`/destination/district/${cityId}`);
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows.map(mapNamedItem);
+}
+
+export async function getRajaOngkirSubdistricts(districtId: number) {
+  const json = await fetchRajaOngkir(`/destination/sub-district/${districtId}`);
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows.map(mapNamedItem);
+}
+
+export async function searchRajaOngkirDestinations(search: string) {
+  const keyword = search.trim();
+  const limit = 100;
+  const maxPages = 10;
+  const all: any[] = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const params = new URLSearchParams({
+      search: keyword,
+      limit: String(limit),
+      offset: String(page * limit),
+    });
+
+    const json = await fetchRajaOngkir(`/destination/domestic-destination?${params.toString()}`);
+    const rows = Array.isArray(json.data) ? json.data : [];
+    all.push(...rows);
+    if (rows.length < limit) break;
+  }
+
+  const seen = new Set<number>();
+  const uniqueRows = all.filter((item) => {
+    const id = Number(item.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  return uniqueRows.map(mapDestination);
+}
+
+function normalizeEtd(value: unknown) {
+  const etd = String(value || '').trim();
+  if (!etd || etd === '-') return '-';
+  if (/days?/i.test(etd)) return etd.replace(/days?/i, 'hari');
+  return etd.toLowerCase().includes('hari') ? etd : `${etd} hari`;
+}
+
+function fallbackShippingRate(courier: typeof SHIPPING_COURIERS[number]): ShippingRate {
+  return {
+    id: `${courier.code}-fallback`,
+    courier: courier.courier,
+    name: courier.name,
+    service: 'Reguler',
+    description: 'Ongkir belum tersedia dari RajaOngkir',
+    price: 0,
+    etd: '-',
+  };
+}
+
+async function fetchCourierRate(originId: string | number, destinationId: string | number, weightGram: number, courier: typeof SHIPPING_COURIERS[number]) {
+  const body = new URLSearchParams({
+    origin: String(originId),
+    destination: String(destinationId),
+    weight: String(weightGram),
+    courier: courier.code,
+    price: 'lowest',
+  });
+
+  const json = await fetchRajaOngkir('/calculate/domestic-cost', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+
+  const rates = (Array.isArray(json.data) ? json.data : []).map((item: any): ShippingRate => ({
+    id: `${courier.code}-${String(item.service || item.description || 'regular').toLowerCase().replace(/\s+/g, '-')}`,
+    courier: courier.courier,
+    name: courier.name,
+    service: item.service || 'Reguler',
+    description: item.description || item.service || '',
+    price: Number(item.cost || 0),
+    etd: normalizeEtd(item.etd),
+  })).filter((rate: ShippingRate) => rate.price > 0);
+
+  return rates.sort((a: ShippingRate, b: ShippingRate) => a.price - b.price)[0] || fallbackShippingRate(courier);
+}
+
+export async function getShippingRates(input: ShippingRateRequest) {
+  const [originId, destinationId] = await Promise.all([
+    findRajaOngkirDestinationId({ destinationCity: env.RAJAONGKIR_ORIGIN_SEARCH }),
+    findRajaOngkirDestinationId(input),
+  ]);
+
+  const rates = await Promise.all(SHIPPING_COURIERS.map(async (courier) => {
+    try {
+      return await fetchCourierRate(originId, destinationId, input.weightGram, courier);
+    } catch (error) {
+      console.warn(`RajaOngkir rate unavailable for ${courier.code}:`, error instanceof Error ? error.message : error);
+      return fallbackShippingRate(courier);
+    }
+  }));
+
+  return rates;
 }

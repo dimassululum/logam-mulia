@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { CalendarDays, ChevronLeft, Share2 } from 'lucide-react'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
@@ -20,7 +21,8 @@ async function getArticle(id: string) {
     if (!response.ok) return null
 
     const json = await response.json()
-    return (json.data ?? null) as ArticleDetail | null
+    const article = (json.data ?? null) as ArticleDetail | null
+    return article ? { ...article, coverUrl: resolvePublicAssetUrl(article.coverUrl || '') } : null
   } catch (error) {
     console.error('Error fetching article detail:', error)
     return null

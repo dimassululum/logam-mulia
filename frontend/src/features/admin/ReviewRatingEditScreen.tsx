@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ImagePlus, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Button, Card, Input, Modal } from '@/shared/ui'
@@ -89,13 +90,13 @@ export default function ReviewRatingEditScreen({ productId }: { productId: strin
         id: data.id,
         name: data.name,
         price: Number(data.price || 0),
-        imageUrl: data.images?.[0]?.imageUrl || '',
+        imageUrl: resolvePublicAssetUrl(data.images?.[0]?.imageUrl || ''),
         displayRating: Number(data.displayRating ?? 5),
         soldCount: Number(data.soldCount ?? 0),
         displayReviews: (data.displayReviews || []).map((review: any) => ({
           id: review.id,
           reviewerName: review.reviewerName,
-          imageUrl: review.imageUrl || '',
+          imageUrl: resolvePublicAssetUrl(review.imageUrl || ''),
           description: review.description || '',
         })),
       }

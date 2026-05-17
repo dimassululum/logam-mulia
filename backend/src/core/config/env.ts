@@ -33,7 +33,8 @@ export const env = {
   MIDTRANS_IS_PRODUCTION: process.env.MIDTRANS_IS_PRODUCTION === 'true',
 
   RAJAONGKIR_API_KEY: process.env.RAJAONGKIR_API_KEY || '',
-  RAJAONGKIR_BASE_URL: process.env.RAJAONGKIR_BASE_URL || 'https://api.rajaongkir.com/starter',
+  RAJAONGKIR_BASE_URL: process.env.RAJAONGKIR_BASE_URL || 'https://rajaongkir.komerce.id/api/v1',
+  RAJAONGKIR_ORIGIN_SEARCH: process.env.RAJAONGKIR_ORIGIN_SEARCH || 'Jakarta Timur',
 
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',
   EMAIL_FROM: process.env.EMAIL_FROM || 'noreply@logam-mulia.com',

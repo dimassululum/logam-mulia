@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Pencil, Search, Star } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import { FilterInput, ManagementSection } from '@/features/admin/admin-management-shared'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
@@ -49,7 +50,7 @@ export default function ReviewRatingManagementScreen() {
         slug: product.slug,
         category: product.category?.name || 'Lainnya',
         price: Number(product.price || 0),
-        imageUrl: product.images?.[0]?.imageUrl || '',
+        imageUrl: resolvePublicAssetUrl(product.images?.[0]?.imageUrl || ''),
         displayRating: Number(product.displayRating ?? 5),
         reviewCount: Number(product.reviewCount ?? 0),
         soldCount: Number(product.soldCount ?? 0),

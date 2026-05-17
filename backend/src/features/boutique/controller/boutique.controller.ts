@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import * as boutiqueService from '../service/boutique.service';
 import { sendSuccess, parsePagination } from '../../../core/utils/response';
-import { env } from '../../../core/config/env';
+import { buildUploadedFileDataUrl } from '../../../core/utils/public-url';
 
 export async function getAllBoutiqueProducts(req: Request, res: Response) {
   const { isActive } = req.query;
@@ -34,7 +34,7 @@ export async function deleteBoutiqueProduct(req: Request, res: Response) {
 export async function uploadBoutiqueImage(req: Request, res: Response) {
   const file = req.file;
   if (!file) return sendSuccess({ res, statusCode: 400, message: 'Tidak ada file yang diupload' });
-  const imageUrl = `${env.PUBLIC_API_URL}/uploads/${file.filename}`;
+  const imageUrl = await buildUploadedFileDataUrl(file);
   const product = await boutiqueService.updateBoutiqueProduct(req.params.id, { imageUrl });
   sendSuccess({ res, statusCode: 201, message: 'Foto berhasil diupload', data: product });
 }

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { formatGram, formatRupiah } from '@/core/lib/utils'
 import { AdminPageHeader, Badge, Button, Card } from '@/shared/ui'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 
 export default function ProductDetailScreen({ productId }: { productId: string }) {
   const router = useRouter()
@@ -64,7 +65,7 @@ export default function ProductDetailScreen({ productId }: { productId: string }
         <Card padding="md" className="overflow-hidden">
           {product.images && product.images.length > 0 ? (
             <div className="flex w-full aspect-square items-center justify-center rounded-2xl bg-navy-50 overflow-hidden">
-              <img src={product.images[0].imageUrl} alt={product.name} className="w-full h-full object-cover" />
+              <img src={resolvePublicAssetUrl(product.images[0].imageUrl)} alt={product.name} className="w-full h-full object-cover" />
             </div>
           ) : (
             <div className={`flex w-full aspect-square items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 text-3xl font-semibold text-navy-800`}>

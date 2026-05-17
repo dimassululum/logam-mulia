@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, PackagePlus, Pencil, XCircle } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import {
   adminProductRecords,
   productCategoryOptions,
@@ -114,7 +115,7 @@ export default function ProductManagementScreen() {
         status: p.isActive ? 'active' : 'inactive',
         updatedAt: p.updatedAt,
         accent: 'from-blue-50 to-blue-100', // Mock accent color
-        imageUrl: p.images?.[0]?.imageUrl || '',
+        imageUrl: resolvePublicAssetUrl(p.images?.[0]?.imageUrl || ''),
       })))
     } catch (err) {
       console.error('Error fetching data', err)

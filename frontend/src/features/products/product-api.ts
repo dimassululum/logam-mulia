@@ -1,4 +1,5 @@
 import type { Product } from '@/core/types'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
@@ -46,34 +47,8 @@ function toNumber(value: unknown) {
   return Number.isFinite(number) ? number : 0
 }
 
-function resolveApiOrigin() {
-  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '') || API_URL
-  try {
-    const url = new URL(configuredUrl)
-    if (url.pathname.endsWith('/api')) {
-      url.pathname = url.pathname.slice(0, -4) || '/'
-    }
-    return url.origin + url.pathname.replace(/\/+$/, '')
-  } catch {
-    return ''
-  }
-}
-
 export function resolveProductImageUrl(value: string) {
-  if (!value) return ''
-
-  const apiOrigin = resolveApiOrigin()
-  if (value.startsWith('/uploads/')) return `${apiOrigin}${value}`
-
-  try {
-    const url = new URL(value)
-    if (url.pathname.startsWith('/api/uploads/')) {
-      url.pathname = url.pathname.replace(/^\/api\/uploads\//, '/uploads/')
-    }
-    return url.toString()
-  } catch {
-    return value
-  }
+  return resolvePublicAssetUrl(value)
 }
 
 export function mapApiProduct(product: any): ProductDetail {

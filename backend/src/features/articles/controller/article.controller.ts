@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import * as articleService from '../service/article.service';
 import { sendSuccess, paginate, parsePagination } from '../../../core/utils/response';
-import { env } from '../../../core/config/env';
+import { buildUploadedFileDataUrl } from '../../../core/utils/public-url';
 
 export async function getAllArticles(req: Request, res: Response) {
   const { page, limit } = parsePagination(req.query as any);
@@ -39,7 +39,7 @@ export async function deleteArticle(req: Request, res: Response) {
 export async function uploadArticleCover(req: Request, res: Response) {
   const file = req.file;
   if (!file) return sendSuccess({ res, statusCode: 400, message: 'Tidak ada file yang diupload' });
-  const coverUrl = `${env.PUBLIC_API_URL}/uploads/${file.filename}`;
+  const coverUrl = await buildUploadedFileDataUrl(file);
   const article = await articleService.updateArticle(req.params.id, { coverUrl });
   sendSuccess({ res, statusCode: 201, message: 'Cover berhasil diupload', data: article });
 }

@@ -45,6 +45,12 @@ interface ButikOption {
   address: string
 }
 
+interface RajaOngkirAreaOption {
+  id: number
+  name: string
+  zipCode?: string
+}
+
 // ── Static data ───────────────────────────────────────────────────────────────
 const EMPTY_ADDRESS: GuestCheckoutAddress = {
   fullName: '',
@@ -67,7 +73,6 @@ const BANKS = [
 const ZERO_EKSPEDISI_OPTIONS: EkspedisiOption[] = [
   { id: 'jne-free', name: 'JNE', time: '-', price: 0, courier: 'JNE', service: 'Reguler' },
   { id: 'jnt-free', name: 'J&T Express', time: '-', price: 0, courier: 'JNT', service: 'Reguler' },
-  { id: 'paxel-free', name: 'Paxel', time: '-', price: 0, courier: 'PAXEL', service: 'Reguler' },
 ]
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -95,67 +100,20 @@ export default function CheckoutPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [butikOptions, setButikOptions] = useState<ButikOption[]>([])
-  const [ekspedisiOptions, setEkspedisiOptions] = useState<EkspedisiOption[]>([])
+  const [ekspedisiOptions, setEkspedisiOptions] = useState<EkspedisiOption[]>(ZERO_EKSPEDISI_OPTIONS)
   const [isLoadingRates, setIsLoadingRates] = useState(false)
   const [shippingRateError, setShippingRateError] = useState('')
-
-  const [provinces, setProvinces] = useState<{id: string, name: string}[]>([])
-  const [cities, setCities] = useState<{id: string, name: string}[]>([])
-  const [districts, setDistricts] = useState<{id: string, name: string}[]>([])
-  const [villages, setVillages] = useState<{id: string, name: string}[]>([])
-
-  // Fetch Provinces on mount
-  useEffect(() => {
-    fetch('https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json')
-      .then(res => res.json())
-      .then(data => setProvinces(data))
-      .catch(err => console.error(err))
-  }, [])
-
-  // Fetch Cities when Province changes
-  useEffect(() => {
-    if (addressForm.province) {
-      const provinceId = provinces.find(p => p.name === addressForm.province)?.id
-      if (provinceId) {
-        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${provinceId}.json`)
-          .then(res => res.json())
-          .then(data => setCities(data))
-          .catch(err => console.error(err))
-      }
-    } else {
-      setCities([])
-    }
-  }, [addressForm.province, provinces])
-
-  // Fetch Districts when City changes
-  useEffect(() => {
-    if (addressForm.city) {
-      const cityId = cities.find(c => c.name === addressForm.city)?.id
-      if (cityId) {
-        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${cityId}.json`)
-          .then(res => res.json())
-          .then(data => setDistricts(data))
-          .catch(err => console.error(err))
-      }
-    } else {
-      setDistricts([])
-    }
-  }, [addressForm.city, cities])
-
-  // Fetch Villages when District changes
-  useEffect(() => {
-    if (addressForm.district) {
-      const districtId = districts.find(d => d.name === addressForm.district)?.id
-      if (districtId) {
-        fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/villages/${districtId}.json`)
-          .then(res => res.json())
-          .then(data => setVillages(data))
-          .catch(err => console.error(err))
-      }
-    } else {
-      setVillages([])
-    }
-  }, [addressForm.district, districts])
+  const [provinceOptions, setProvinceOptions] = useState<RajaOngkirAreaOption[]>([])
+  const [cityOptions, setCityOptions] = useState<RajaOngkirAreaOption[]>([])
+  const [districtOptions, setDistrictOptions] = useState<RajaOngkirAreaOption[]>([])
+  const [subdistrictOptions, setSubdistrictOptions] = useState<RajaOngkirAreaOption[]>([])
+  const [selectedProvinceId, setSelectedProvinceId] = useState<number | null>(null)
+  const [selectedCityId, setSelectedCityId] = useState<number | null>(null)
+  const [selectedDistrictId, setSelectedDistrictId] = useState<number | null>(null)
+  const [selectedSubdistrictId, setSelectedSubdistrictId] = useState<number | null>(null)
+  const [isLoadingDestinations, setIsLoadingDestinations] = useState(false)
+  const [destinationError, setDestinationError] = useState('')
+  const [addressFormError, setAddressFormError] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -203,11 +161,169 @@ export default function CheckoutPage() {
   }, [router])
 
   useEffect(() => {
-    if (deliveryType !== 'ekspedisi' || !selectedAddress?.city || checkoutItems.length === 0) return
-    setIsLoadingRates(false)
-    setShippingRateError('')
-    setSelectedEkspedisi(null)
+    let alive = true
+    async function loadProvinces() {
+      setIsLoadingDestinations(true)
+      setDestinationError('')
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+        const response = await fetch(`${apiBase}/checkout/destinations/provinces`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat provinsi RajaOngkir.')
+        if (!alive) return
+        setProvinceOptions(json.data || [])
+      } catch (error) {
+        if (!alive) return
+        setProvinceOptions([])
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat provinsi RajaOngkir.')
+      } finally {
+        if (alive) setIsLoadingDestinations(false)
+      }
+    }
+
+    loadProvinces()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedProvinceId) {
+      setCityOptions([])
+      return
+    }
+    let alive = true
+    async function loadCities() {
+      setIsLoadingDestinations(true)
+      setDestinationError('')
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+        const response = await fetch(`${apiBase}/checkout/destinations/cities?provinceId=${selectedProvinceId}`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat kota/kabupaten RajaOngkir.')
+        if (!alive) return
+        setCityOptions(json.data || [])
+      } catch (error) {
+        if (!alive) return
+        setCityOptions([])
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kota/kabupaten RajaOngkir.')
+      } finally {
+        if (alive) setIsLoadingDestinations(false)
+      }
+    }
+    loadCities()
+    return () => {
+      alive = false
+    }
+  }, [selectedProvinceId])
+
+  useEffect(() => {
+    if (!selectedCityId) {
+      setDistrictOptions([])
+      return
+    }
+    let alive = true
+    async function loadDistricts() {
+      setIsLoadingDestinations(true)
+      setDestinationError('')
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+        const response = await fetch(`${apiBase}/checkout/destinations/districts?cityId=${selectedCityId}`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat kecamatan RajaOngkir.')
+        if (!alive) return
+        setDistrictOptions(json.data || [])
+      } catch (error) {
+        if (!alive) return
+        setDistrictOptions([])
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kecamatan RajaOngkir.')
+      } finally {
+        if (alive) setIsLoadingDestinations(false)
+      }
+    }
+    loadDistricts()
+    return () => {
+      alive = false
+    }
+  }, [selectedCityId])
+
+  useEffect(() => {
+    if (!selectedDistrictId) {
+      setSubdistrictOptions([])
+      return
+    }
+    let alive = true
+    async function loadSubdistricts() {
+      setIsLoadingDestinations(true)
+      setDestinationError('')
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+        const response = await fetch(`${apiBase}/checkout/destinations/subdistricts?districtId=${selectedDistrictId}`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat kelurahan RajaOngkir.')
+        if (!alive) return
+        setSubdistrictOptions(json.data || [])
+      } catch (error) {
+        if (!alive) return
+        setSubdistrictOptions([])
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kelurahan RajaOngkir.')
+      } finally {
+        if (alive) setIsLoadingDestinations(false)
+      }
+    }
+    loadSubdistricts()
+    return () => {
+      alive = false
+    }
+  }, [selectedDistrictId])
+
+  useEffect(() => {
+    if (deliveryType !== 'ekspedisi') return
     setEkspedisiOptions(ZERO_EKSPEDISI_OPTIONS)
+    if (!selectedAddress?.city || checkoutItems.length === 0) return
+    let alive = true
+
+    async function loadShippingRates() {
+      setIsLoadingRates(true)
+      setShippingRateError('')
+      setSelectedEkspedisi(null)
+      try {
+        const weightGram = Math.max(1, Math.ceil(checkoutItems.reduce((sum, item) => sum + item.product.weightGram * item.quantity, 0)))
+        const params = new URLSearchParams({
+          destinationCity: selectedAddress.city,
+          weightGram: String(weightGram),
+        })
+        if (selectedAddress.district) params.set('destinationDistrict', selectedAddress.district)
+        if (selectedAddress.village) params.set('destinationVillage', selectedAddress.village)
+        if (selectedAddress.postalCode) params.set('destinationPostalCode', selectedAddress.postalCode)
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/checkout/shipping-rates?${params.toString()}`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.message)
+        if (!alive) return
+        const rates = (json.data || []).map((rate: any) => ({
+          id: rate.id,
+          name: rate.name,
+          time: rate.etd,
+          price: rate.price,
+          courier: rate.courier,
+          service: rate.service,
+        }))
+        setEkspedisiOptions(rates.length > 0 ? rates : ZERO_EKSPEDISI_OPTIONS)
+      } catch (error) {
+        if (alive) {
+          setEkspedisiOptions(ZERO_EKSPEDISI_OPTIONS)
+          setShippingRateError(error instanceof Error ? error.message : 'Gagal memuat ongkir RajaOngkir.')
+        }
+      } finally {
+        if (alive) setIsLoadingRates(false)
+      }
+    }
+
+    loadShippingRates()
+    return () => {
+      alive = false
+    }
   }, [checkoutItems, deliveryType, selectedAddress])
 
   const handleSelectEkspedisi = (opt: EkspedisiOption) => {
@@ -228,11 +344,35 @@ export default function CheckoutPage() {
 
   const openNewAddressModal = () => {
     setAddressForm(EMPTY_ADDRESS)
+    setSelectedProvinceId(null)
+    setSelectedCityId(null)
+    setSelectedDistrictId(null)
+    setSelectedSubdistrictId(null)
+    setCityOptions([])
+    setDistrictOptions([])
+    setSubdistrictOptions([])
+    setDestinationError('')
+    setAddressFormError('')
     setShowAddressModal(false)
     setShowAddressFormModal(true)
   }
 
   const handleSaveAddress = () => {
+    if (
+      !addressForm.fullName.trim()
+      || !addressForm.phone.trim()
+      || !addressForm.address.trim()
+      || !addressForm.province.trim()
+      || !addressForm.city.trim()
+      || !addressForm.district.trim()
+      || !addressForm.village.trim()
+      || !addressForm.postalCode.trim()
+      || !selectedSubdistrictId
+    ) {
+      setAddressFormError('Semua field alamat wajib diisi.')
+      return
+    }
+    setAddressFormError('')
     setAddressHistory((current) => [addressForm, ...current])
     setSelectedAddress(addressForm)
     setShowAddressFormModal(false)
@@ -663,82 +803,126 @@ export default function CheckoutPage() {
               </label>
               <select
                 id="new-address-province"
-                className="input-base bg-white"
-                value={addressForm.province}
+                className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
+                value={selectedProvinceId ? String(selectedProvinceId) : ''}
                 onChange={(event) => {
-                  handleAddressChange('province', event.target.value)
-                  handleAddressChange('city', '')
-                  handleAddressChange('district', '')
-                  handleAddressChange('village', '')
+                  const nextId = Number(event.target.value)
+                  const selected = provinceOptions.find((item) => item.id === nextId)
+                  setSelectedProvinceId(Number.isFinite(nextId) ? nextId : null)
+                  setSelectedCityId(null)
+                  setSelectedDistrictId(null)
+                  setSelectedSubdistrictId(null)
+                  setCityOptions([])
+                  setDistrictOptions([])
+                  setSubdistrictOptions([])
+                  setAddressForm((current) => ({
+                    ...current,
+                    province: selected?.name || '',
+                    city: '',
+                    district: '',
+                    village: '',
+                    postalCode: '',
+                  }))
                 }}
+                disabled={isLoadingDestinations}
                 required
               >
-                <option value="">Pilih Provinsi</option>
-                {provinces.map(p => (
-                  <option key={p.id} value={p.name}>{p.name}</option>
+                <option value="">{isLoadingDestinations ? 'Memuat provinsi...' : 'Pilih provinsi'}</option>
+                {provinceOptions.map((province) => (
+                  <option key={province.id} value={province.id}>{province.name}</option>
                 ))}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="new-address-city" className="text-sm font-medium text-navy-700">
+              <label htmlFor="new-address-city-select" className="text-sm font-medium text-navy-700">
                 Kota / Kabupaten <span className="text-red-500">*</span>
               </label>
               <select
-                id="new-address-city"
+                id="new-address-city-select"
                 className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
-                value={addressForm.city}
+                value={selectedCityId ? String(selectedCityId) : ''}
                 onChange={(event) => {
-                  handleAddressChange('city', event.target.value)
-                  handleAddressChange('district', '')
-                  handleAddressChange('village', '')
+                  const nextId = Number(event.target.value)
+                  const selected = cityOptions.find((item) => item.id === nextId)
+                  setSelectedCityId(Number.isFinite(nextId) ? nextId : null)
+                  setSelectedDistrictId(null)
+                  setSelectedSubdistrictId(null)
+                  setDistrictOptions([])
+                  setSubdistrictOptions([])
+                  setAddressForm((current) => ({
+                    ...current,
+                    city: selected?.name || '',
+                    district: '',
+                    village: '',
+                    postalCode: '',
+                  }))
                 }}
-                disabled={!addressForm.province || cities.length === 0}
+                disabled={!selectedProvinceId || cityOptions.length === 0}
                 required
               >
-                <option value="">Pilih Kota/Kabupaten</option>
-                {cities.map(c => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
+                <option value="">Pilih kota/kabupaten</option>
+                {cityOptions.map((city) => (
+                  <option key={city.id} value={city.id}>{city.name}</option>
                 ))}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="new-address-district" className="text-sm font-medium text-navy-700">
+              <label htmlFor="new-address-district-select" className="text-sm font-medium text-navy-700">
                 Kecamatan <span className="text-red-500">*</span>
               </label>
               <select
-                id="new-address-district"
+                id="new-address-district-select"
                 className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
-                value={addressForm.district || ''}
+                value={selectedDistrictId ? String(selectedDistrictId) : ''}
                 onChange={(event) => {
-                  handleAddressChange('district', event.target.value)
-                  handleAddressChange('village', '')
+                  const nextId = Number(event.target.value)
+                  const selected = districtOptions.find((item) => item.id === nextId)
+                  setSelectedDistrictId(Number.isFinite(nextId) ? nextId : null)
+                  setSelectedSubdistrictId(null)
+                  setSubdistrictOptions([])
+                  setAddressForm((current) => ({
+                    ...current,
+                    district: selected?.name || '',
+                    village: '',
+                    postalCode: '',
+                  }))
                 }}
-                disabled={!addressForm.city || districts.length === 0}
+                disabled={!selectedCityId || districtOptions.length === 0}
                 required
               >
-                <option value="">Pilih Kecamatan</option>
-                {districts.map(d => (
-                  <option key={d.id} value={d.name}>{d.name}</option>
+                <option value="">Pilih kecamatan</option>
+                {districtOptions.map((district) => (
+                  <option key={district.id} value={district.id}>{district.name}</option>
                 ))}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="new-address-village" className="text-sm font-medium text-navy-700">
-                Desa / Kelurahan <span className="text-red-500">*</span>
+              <label htmlFor="new-address-village-select" className="text-sm font-medium text-navy-700">
+                Kelurahan <span className="text-red-500">*</span>
               </label>
               <select
-                id="new-address-village"
+                id="new-address-village-select"
                 className="input-base bg-white disabled:bg-gray-100 disabled:text-gray-400"
-                value={addressForm.village || ''}
-                onChange={(event) => handleAddressChange('village', event.target.value)}
-                disabled={!addressForm.district || villages.length === 0}
+                value={selectedSubdistrictId ? String(selectedSubdistrictId) : ''}
+                onChange={(event) => {
+                  const nextId = Number(event.target.value)
+                  const target = subdistrictOptions.find((item) => item.id === nextId)
+                  setSelectedSubdistrictId(Number.isFinite(nextId) ? nextId : null)
+                  setAddressForm((current) => ({
+                    ...current,
+                    village: target?.name || '',
+                    postalCode: target?.zipCode || '',
+                  }))
+                }}
+                disabled={!selectedDistrictId || subdistrictOptions.length === 0}
                 required
               >
-                <option value="">Pilih Desa/Kelurahan</option>
-                {villages.map(v => (
-                  <option key={v.id} value={v.name}>{v.name}</option>
+                <option value="">Pilih kelurahan</option>
+                {subdistrictOptions.map((village) => (
+                  <option key={village.id} value={village.id}>{village.name}</option>
                 ))}
               </select>
+              {destinationError ? <p className="text-xs font-medium text-red-500">{destinationError}</p> : null}
             </div>
             <Input
               id="new-address-postal"
@@ -767,6 +951,9 @@ export default function CheckoutPage() {
           <Button type="button" size="lg" fullWidth onClick={handleSaveAddress}>
             Simpan Alamat
           </Button>
+          {addressFormError ? (
+            <p className="text-sm font-medium text-red-500">{addressFormError}</p>
+          ) : null}
         </div>
       </Modal>
 
