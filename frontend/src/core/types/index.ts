@@ -11,6 +11,9 @@ export interface Product {
   imageUrl: string
   category: string
   purity: string // e.g. "99.99%"
+  displayRating: number
+  reviewCount: number
+  soldCount: number
   createdAt: string
   updatedAt: string
 }
@@ -30,6 +33,7 @@ export type OrderStatus =
   | 'shipped'
   | 'delivered'
   | 'completed'
+  | 'selesai'
   | 'canceled'
   | 'cancelled'
   | 'refund'

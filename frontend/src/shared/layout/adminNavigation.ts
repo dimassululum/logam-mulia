@@ -11,7 +11,9 @@ import {
   Newspaper,
   Clapperboard,
   Image,
+  LineChart,
   PanelsTopLeft,
+  Star,
 } from 'lucide-react'
 
 export interface AdminNavChildItem {
@@ -30,6 +32,8 @@ export interface AdminNavItem {
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/products', label: 'Produk', icon: Package },
+  { href: '/admin/reviews-rating', label: 'Ulasan & Rating', icon: Star },
+  { href: '/admin/metal-prices', label: 'Harga Logam', icon: LineChart },
   { href: '/admin/categories', label: 'Kategori', icon: FolderTree },
   { href: '/admin/orders', label: 'Pesanan', icon: ShoppingCart },
   { href: '/admin/customers', label: 'Data Customer', icon: Users },

@@ -7,7 +7,13 @@ async function main() {
   const passwordHash = await bcrypt.hash('admin123', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@logam-mulia.com' },
-    update: {},
+    update: {
+      name: 'Admin Utama',
+      passwordHash,
+      role: 'SUPER_ADMIN',
+      isActive: true,
+      isKycVerified: true,
+    },
     create: {
       email: 'admin@logam-mulia.com',
       name: 'Admin Utama',
@@ -116,6 +122,54 @@ async function main() {
         isPrimary: true,
         sortOrder: 0,
       },
+    });
+  }
+
+  const reviewProduct =
+    await prisma.product.findUnique({ where: { slug: 'emas-antam-logam-mulia-certicard---2-gr' }, include: { images: true } }) ||
+    await prisma.product.findUnique({ where: { slug: 'antam-certicard-1-gram' }, include: { images: true } }) ||
+    await prisma.product.findFirst({ include: { images: true } });
+
+  if (reviewProduct) {
+    const existingSetting = await prisma.setting.findUnique({ where: { key: 'product_display_reviews' } });
+    const productDisplayMeta = existingSetting ? JSON.parse(existingSetting.value) : {};
+    const now = new Date().toISOString();
+
+    productDisplayMeta[reviewProduct.id] = {
+      displayRating: 5.0,
+      soldCount: 124,
+      displayReviews: [
+        {
+          id: 'seed-review-cici-sarah',
+          reviewerName: 'Cici Sarah',
+          imageUrl: reviewProduct.images[0]?.imageUrl || '/images/lm.png',
+          description: 'Terimakasih seller. Awalnya ragu, ternyata asli.',
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'seed-review-marcelinno',
+          reviewerName: 'Marcelinno',
+          imageUrl: '',
+          description: 'Barang asli dan terpercaya. Pengiriman juga aman.',
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'seed-review-ny-sintiaa',
+          reviewerName: 'Ny.Sintiaa',
+          imageUrl: reviewProduct.images[0]?.imageUrl || '/images/cert.png',
+          description: 'Barang ok dan bagus. Seller ramah.',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    };
+
+    await prisma.setting.upsert({
+      where: { key: 'product_display_reviews' },
+      update: { value: JSON.stringify(productDisplayMeta) },
+      create: { key: 'product_display_reviews', value: JSON.stringify(productDisplayMeta) },
     });
   }
 
@@ -269,7 +323,7 @@ async function main() {
     });
   }
 
-  console.log('Seed completed: admin, categories, products, boutiques, articles, and company profile are ready.');
+  console.log(`Seed completed: admin, categories, products, reviews, boutiques, articles, and company profile are ready. Review product: ${reviewProduct?.name ?? '-'}`);
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

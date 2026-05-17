@@ -20,6 +20,9 @@ interface ProductFormState {
   purity: string
   price: string
   stock: string
+  displayRating: string
+  reviewCount: string
+  soldCount: string
   status: 'active' | 'inactive'
   description: string
 }
@@ -31,6 +34,9 @@ const EMPTY_STATE: ProductFormState = {
   purity: '99.99%',
   price: '',
   stock: '',
+  displayRating: '5.0',
+  reviewCount: '0',
+  soldCount: '0',
   status: 'active',
   description: '',
 }
@@ -62,6 +68,9 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
             purity: p.kadar || '99.99%',
             price: String(p.price),
             stock: String(p.stock),
+            displayRating: String(p.displayRating ?? '5.0'),
+            reviewCount: String(p.reviewCount ?? '0'),
+            soldCount: String(p.soldCount ?? '0'),
             status: p.isActive ? 'active' : 'inactive',
             description: p.description || '',
           })
@@ -88,6 +97,12 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
 
   function sanitize(value: string) {
     return value.replace(/[^\d]/g, '')
+  }
+
+  function sanitizeRating(value: string) {
+    const normalized = value.replace(',', '.').replace(/[^\d.]/g, '')
+    const [whole, decimal = ''] = normalized.split('.')
+    return decimal ? `${whole}.${decimal.slice(0, 1)}` : whole
   }
 
   function handleFileSelect(file: File) {
@@ -121,6 +136,9 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
         weightGram: parseFloat(formState.weightGram),
         kadar: formState.purity,
         stock: parseInt(formState.stock, 10),
+        displayRating: Math.min(5, Math.max(0, Number(formState.displayRating || 0))),
+        reviewCount: parseInt(formState.reviewCount || '0', 10),
+        soldCount: parseInt(formState.soldCount || '0', 10),
         isActive: productId ? formState.status === 'active' : true
       }
 
@@ -228,6 +246,34 @@ export default function ProductFormScreen({ productId }: ProductFormScreenProps)
                 value={formState.stock}
                 onChange={(event) =>
                   setFormState((current) => ({ ...current, stock: sanitize(event.target.value) }))
+                }
+              />
+              <Input
+                id="product-rating"
+                label="Rating tampilan"
+                value={formState.displayRating}
+                inputMode="decimal"
+                hint="Angka 0-5, contoh 5.0"
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, displayRating: sanitizeRating(event.target.value) }))
+                }
+              />
+              <Input
+                id="product-review-count"
+                label="Jumlah ulasan"
+                value={formState.reviewCount}
+                inputMode="numeric"
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, reviewCount: sanitize(event.target.value) }))
+                }
+              />
+              <Input
+                id="product-sold-count"
+                label="Jumlah terjual"
+                value={formState.soldCount}
+                inputMode="numeric"
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, soldCount: sanitize(event.target.value) }))
                 }
               />
               {productId && (

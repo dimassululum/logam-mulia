@@ -1,9 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { formatRupiah } from '@/core/lib/utils'
-import AppBar from '@/shared/ui/AppBar'
 import { ChevronRight, ShieldCheck, Star, ShoppingCart } from 'lucide-react'
 import {
   getStorefrontProduct,
@@ -26,17 +24,41 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
-const REVIEWS = [
-  { initials: 'BS', name: 'Budi S.', rating: 5, text: 'Barang sampai dengan aman. Certicard utuh dan bisa diverifikasi.' },
-  { initials: 'AW', name: 'Andi W.', rating: 5, text: 'Pengiriman cepat dan packing rapi untuk investasi jangka panjang.' },
-]
-
 function ProductImageFallback() {
   return (
     <div className="flex h-full w-full items-center justify-center rounded-2xl bg-navy-900 text-gold-400">
       <ShoppingCart className="h-14 w-14 opacity-50" />
     </div>
   )
+}
+
+function RatingStars({ rating, className = 'h-4 w-4' }: { rating: number; className?: string }) {
+  const rounded = Math.round(rating)
+
+  return (
+    <div className="flex items-center gap-0.5" aria-label={`Rating ${rating.toFixed(1)} dari 5`}>
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Star
+          key={index}
+          className={`${className} ${index < rounded ? 'fill-gold-600 text-gold-600' : 'fill-navy-200 text-navy-200'}`}
+        />
+      ))}
+    </div>
+  )
+}
+
+function formatReviewDate(value: string) {
+  if (!value) return ''
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Jakarta',
+  }).format(new Date(value))
 }
 
 export default async function ProductDetailPage({ params }: PageProps) {
@@ -56,25 +78,12 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   return (
     <div className="bg-surface min-h-screen">
-      <AppBar
-        title="Detail Produk"
-        rightSlot={
-          <Link
-            href="/cart"
-            className="relative text-gold-400 hover:text-gold-300 [transition-duration:var(--transition-fast)] transition-colors"
-            aria-label="Keranjang Belanja"
-          >
-            <ShoppingCart className="w-6 h-6" />
-          </Link>
-        }
-      />
-
       <main className="container-main py-8 pb-32">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-16">
           <section className="space-y-4">
             <div className="aspect-square bg-white border border-navy-100 rounded-2xl overflow-hidden flex items-center justify-center p-8 shadow-sm relative">
               {images[0] ? (
-                <Image src={images[0]} alt={product.name} fill className="object-contain p-8" priority />
+                <img src={images[0]} alt={product.name} className="h-full w-full object-contain" />
               ) : (
                 <ProductImageFallback />
               )}
@@ -89,7 +98,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
                       idx === 0 ? 'border-gold-400 shadow-sm' : 'border-navy-100'
                     }`}
                   >
-                    <Image src={img} alt={`Thumbnail ${idx + 1}`} fill className="object-contain p-2" />
+                    <img src={img} alt={`Thumbnail ${idx + 1}`} className="h-full w-full object-contain" />
                   </div>
                 ))}
               </div>
@@ -141,27 +150,46 @@ export default async function ProductDetailPage({ params }: PageProps) {
             </div>
 
             <div className="pt-8 border-t border-navy-200">
-              <h2 className="font-heading text-lg font-bold text-navy-900 mb-4 border-b border-navy-200 pb-2">Ulasan Pelanggan</h2>
-              <div className="space-y-4">
-                {REVIEWS.map((review) => (
-                  <div key={review.name} className="bg-surface border border-navy-100 p-4 rounded-xl">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-full bg-navy-100 flex-shrink-0 flex items-center justify-center text-gold-500 font-bold text-sm">
-                        {review.initials}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-navy-900 leading-none mb-1">{review.name}</p>
-                        <div className="flex gap-0.5">
-                          {[...Array(5)].map((_, i) => (
-                            <Star key={i} className={`w-3 h-3 ${i < review.rating ? 'fill-gold-500 text-gold-500' : 'fill-navy-200 text-navy-200'}`} />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-sm text-navy-700">{review.text}</p>
-                  </div>
-                ))}
+              <div className="mb-6 flex flex-col gap-3 border-b border-navy-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="font-heading text-2xl font-bold text-navy-900">Ulasan Pelanggan</h2>
+                <div className="flex items-center gap-3 text-navy-700">
+                  <RatingStars rating={product.displayRating} className="h-4 w-4" />
+                  <span className="text-sm font-semibold">{product.displayRating.toFixed(1)} · {product.reviewCount} ulasan</span>
+                </div>
               </div>
+              {product.reviews.length > 0 ? (
+                <div className="space-y-4">
+                  {product.reviews.map((review) => (
+                    <article key={review.id} className="rounded-2xl border border-navy-100 bg-white p-5 shadow-sm">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-navy-900">{review.name}</p>
+                          <div className="mt-3">
+                            <RatingStars rating={review.rating} className="h-4 w-4" />
+                          </div>
+                        </div>
+                        {review.createdAt ? (
+                          <time className="shrink-0 text-right text-sm text-navy-500" dateTime={review.createdAt}>
+                            {formatReviewDate(review.createdAt)}
+                          </time>
+                        ) : null}
+                      </div>
+                      {review.comment ? <p className="mt-7 text-base leading-relaxed text-navy-600">{review.comment}</p> : null}
+                      {review.imageUrl ? (
+                        <img
+                          src={review.imageUrl}
+                          alt={`Foto ulasan ${review.name}`}
+                          className="mt-5 aspect-[4/5] w-full max-w-[214px] rounded-lg border border-navy-100 object-cover"
+                        />
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-navy-100 bg-white p-6 text-sm text-navy-500 shadow-sm">
+                  Belum ada ulasan pelanggan yang ditampilkan.
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -179,11 +207,11 @@ export default async function ProductDetailPage({ params }: PageProps) {
                 <Link
                   key={item.id}
                   href={`/products/${item.slug}`}
-                  className="min-w-[180px] bg-white border border-navy-200 rounded-2xl p-4 group flex-shrink-0 hover:shadow-md transition-all duration-300"
+                  className="w-[180px] shrink-0 bg-white border border-navy-200 rounded-2xl p-4 group hover:shadow-md transition-all duration-300"
                 >
-                  <div className="aspect-square mb-4 overflow-hidden rounded-xl bg-surface flex items-center justify-center relative">
+                  <div className="mb-4 aspect-square w-full overflow-hidden rounded-xl bg-surface flex items-center justify-center">
                     {item.imageUrl ? (
-                      <Image src={item.imageUrl} alt={item.name} fill className="object-contain p-2 group-hover:scale-105 transition-transform duration-300" />
+                      <img src={item.imageUrl} alt={item.name} className="h-full w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105" />
                     ) : (
                       <ProductImageFallback />
                     )}

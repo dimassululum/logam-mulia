@@ -61,3 +61,18 @@ export async function deleteImage(req: Request, res: Response) {
   await productService.removeProductImage(req.params.imageId);
   sendSuccess({ res, message: 'Foto berhasil dihapus' });
 }
+
+export async function createDisplayReview(req: Request, res: Response) {
+  const review = await productService.createDisplayReview(req.params.id, req.body);
+  sendSuccess({ res, statusCode: 201, message: 'Ulasan berhasil dibuat', data: review });
+}
+
+export async function updateDisplayReview(req: Request, res: Response) {
+  const review = await productService.updateDisplayReview(req.params.reviewId, req.body);
+  sendSuccess({ res, message: 'Ulasan berhasil diupdate', data: review });
+}
+
+export async function deleteDisplayReview(req: Request, res: Response) {
+  await productService.deleteDisplayReview(req.params.reviewId);
+  sendSuccess({ res, message: 'Ulasan berhasil dihapus' });
+}

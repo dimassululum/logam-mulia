@@ -27,6 +27,11 @@ const nextConfig = {
         hostname: 'images.unsplash.com',
       },
       {
+        protocol: 'https',
+        hostname: 'logam-mulia-production.up.railway.app',
+        pathname: '/uploads/**',
+      },
+      {
         protocol: 'http',
         hostname: 'localhost',
         port: '5000',

@@ -21,15 +21,27 @@ import voucherRoutes from '../features/vouchers/routes/voucher.routes';
 import checkoutRoutes from '../features/checkout/routes/checkout.routes';
 import customerRoutes from '../features/customers/routes/customer.routes';
 import orderRoutes from '../features/orders/routes/order.routes';
+import metalPriceRoutes from '../features/metal-prices/routes/metal-price.routes';
 
 const app = express();
+const allowedOrigins = [
+  env.FRONTEND_URL,
+  ...(env.IS_DEVELOPMENT ? ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003'] : []),
+];
 
 // ─── Security ──────────────────────────────────────────────────────────────
 app.use(helmet());
 
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -85,6 +97,7 @@ app.use('/api/vouchers', voucherRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/metal-prices', metalPriceRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────────────────────────
 app.use((_req, res) => {

@@ -108,6 +108,9 @@ export default function ProductManagementScreen() {
         price: p.price,
         stock: p.stock,
         weightGram: p.weightGram,
+        displayRating: Number(p.displayRating ?? 5),
+        reviewCount: Number(p.reviewCount ?? 0),
+        soldCount: Number(p.soldCount ?? 0),
         status: p.isActive ? 'active' : 'inactive',
         updatedAt: p.updatedAt,
         accent: 'from-blue-50 to-blue-100', // Mock accent color
@@ -356,6 +359,9 @@ export default function ProductManagementScreen() {
           <div className="min-w-0">
             <p className="truncate font-semibold text-navy-900">{product.name}</p>
             <p className="mt-1 text-xs text-navy-500">{product.category}</p>
+            <p className="mt-1 text-xs text-navy-400">
+              Rating {product.displayRating.toFixed(1)} · {product.reviewCount} ulasan · {product.soldCount} terjual
+            </p>
           </div>
         </div>,
         <span key={`${product.id}-price`} className="font-semibold text-navy-900">{formatRupiah(product.price)}</span>,

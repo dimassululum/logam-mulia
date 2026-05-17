@@ -58,6 +58,28 @@ export interface HomeHeroProfile {
   videoUrl: string
 }
 
+export interface HomeMetalPriceRecord {
+  id: string
+  metal: 'GOLD' | 'SILVER'
+  price: number
+  recordedAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface HomeMetalPriceSummary {
+  metal: 'GOLD' | 'SILVER'
+  current: HomeMetalPriceRecord | null
+  previous: HomeMetalPriceRecord | null
+  changePercent: number | null
+  history: HomeMetalPriceRecord[]
+}
+
+export interface HomeMetalPrices {
+  gold: HomeMetalPriceSummary
+  silver: HomeMetalPriceSummary
+}
+
 interface CompanyProfileItem {
   value?: string
   type?: string
@@ -73,6 +95,19 @@ const emptyFooter: HomeFooterProfile = {
   googleMapsLink: '',
   whatsAppContact: '',
   socialMedia: [],
+}
+
+const emptyMetalSummary = (metal: 'GOLD' | 'SILVER'): HomeMetalPriceSummary => ({
+  metal,
+  current: null,
+  previous: null,
+  changePercent: null,
+  history: [],
+})
+
+const emptyMetalPrices: HomeMetalPrices = {
+  gold: emptyMetalSummary('GOLD'),
+  silver: emptyMetalSummary('SILVER'),
 }
 
 async function fetchApi<T>(path: string, fallback: T): Promise<T> {
@@ -132,6 +167,36 @@ function mapProduct(product: any): HomeProduct {
   }
 }
 
+function mapMetalPriceRecord(record: any): HomeMetalPriceRecord | null {
+  if (!record) return null
+
+  return {
+    id: record.id,
+    metal: record.metal,
+    price: toNumber(record.price),
+    recordedAt: record.recordedAt || '',
+    createdAt: record.createdAt || '',
+    updatedAt: record.updatedAt || '',
+  }
+}
+
+function mapMetalPriceSummary(summary: any, metal: 'GOLD' | 'SILVER'): HomeMetalPriceSummary {
+  return {
+    metal,
+    current: mapMetalPriceRecord(summary?.current),
+    previous: mapMetalPriceRecord(summary?.previous),
+    changePercent: summary?.changePercent === null || summary?.changePercent === undefined ? null : toNumber(summary.changePercent),
+    history: Array.isArray(summary?.history) ? summary.history.map(mapMetalPriceRecord).filter(Boolean) as HomeMetalPriceRecord[] : [],
+  }
+}
+
+function mapMetalPrices(data: any): HomeMetalPrices {
+  return {
+    gold: mapMetalPriceSummary(data?.gold, 'GOLD'),
+    silver: mapMetalPriceSummary(data?.silver, 'SILVER'),
+  }
+}
+
 function mapBoutique(boutique: any): HomeBoutique {
   return {
     id: boutique.id,
@@ -154,11 +219,12 @@ function mapArticle(article: any): HomeArticle {
 }
 
 export async function getHomeData() {
-  const [products, boutiques, articles, companyProfile] = await Promise.all([
+  const [products, boutiques, articles, companyProfile, metalPrices] = await Promise.all([
     fetchApi<any[]>('/products?limit=8&isActive=true', []),
     fetchApi<any[]>('/boutiques?isActive=true', []),
     fetchApi<any[]>('/articles?limit=6&isPublished=true', []),
     fetchApi<CompanyProfileMap>('/company-profile', {}),
+    fetchApi<any>('/metal-prices/public', emptyMetalPrices),
   ])
 
   const profileBanners = readProfileJson<any[]>(companyProfile, 'homepage_banners', [])
@@ -173,6 +239,7 @@ export async function getHomeData() {
 
   return {
     products: products.map(mapProduct),
+    metalPrices: mapMetalPrices(metalPrices),
     boutiques: boutiques.map(mapBoutique),
     articles: articles.map(mapArticle),
     banners: visibleBanners,

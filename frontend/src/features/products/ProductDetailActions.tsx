@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Lock, ShoppingCart, Ticket } from 'lucide-react'
+import { Lock, Ticket } from 'lucide-react'
 import Button from '@/shared/ui/Button'
 import type { Product } from '@/core/types'
 import type { StorefrontVoucher } from '@/features/products/product-api'
 import {
   addProductToCart,
   claimVoucher,
-  onCartUpdated,
-  readCartCount,
   readClaimedVouchers,
   saveCheckoutItems,
 } from '@/features/cart/cart-storage'
@@ -23,22 +21,14 @@ export default function ProductDetailActions({
   product: Product
   vouchers: StorefrontVoucher[]
 }) {
-  const [cartCount, setCartCount] = useState(0)
   const [claimedIds, setClaimedIds] = useState<string[]>([])
 
   useEffect(() => {
-    const sync = () => {
-      setCartCount(readCartCount())
-      setClaimedIds(readClaimedVouchers().map((voucher) => voucher.id))
-    }
-
-    sync()
-    return onCartUpdated(sync)
+    setClaimedIds(readClaimedVouchers().map((voucher) => voucher.id))
   }, [])
 
   function handleAddToCart() {
     addProductToCart(product)
-    setCartCount(readCartCount())
   }
 
   function handleBuyNow() {
@@ -94,26 +84,18 @@ export default function ProductDetailActions({
         </div>
       ) : null}
 
-      <div className="fixed bottom-0 left-0 w-full z-50 bg-white border-t border-navy-200 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] flex h-20 items-stretch divide-x divide-navy-100">
+      <div className="fixed bottom-0 left-0 z-50 flex h-20 w-full items-stretch gap-3 border-t border-navy-200 bg-white px-4 py-3 shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
         <button
           type="button"
           onClick={handleAddToCart}
           disabled={product.stock === 0}
-          className="w-24 flex flex-col items-center justify-center text-navy-600 hover:bg-navy-50 [transition-duration:var(--transition-fast)] transition-colors disabled:text-navy-300"
+          className="flex flex-1 items-center justify-center rounded-xl border border-navy-200 bg-white px-3 text-sm font-bold text-navy-900 transition-colors [transition-duration:var(--transition-fast)] hover:bg-navy-50 disabled:text-navy-300"
           aria-label="Tambah ke keranjang"
         >
-          <span className="relative">
-            <ShoppingCart className="w-5 h-5 mb-1" />
-            {cartCount > 0 ? (
-              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-navy-900">
-                {cartCount}
-              </span>
-            ) : null}
-          </span>
-          <span className="text-[10px] font-bold uppercase tracking-wider">Cart</span>
+          Tambah ke Keranjang
         </button>
-        <Link href="/checkout/email" onClick={handleBuyNow} className="flex-1 flex flex-col items-center justify-center">
-          <Button variant="primary" size="md" fullWidth className="h-full rounded-none flex-col gap-1" disabled={product.stock === 0}>
+        <Link href="/checkout/email" onClick={handleBuyNow} className="flex flex-1 flex-col items-center justify-center">
+          <Button variant="primary" size="md" fullWidth className="h-full rounded-xl flex-col gap-1" disabled={product.stock === 0}>
             <Lock className="w-5 h-5" />
             <span className="text-xs font-bold uppercase tracking-wider">Beli Sekarang</span>
           </Button>

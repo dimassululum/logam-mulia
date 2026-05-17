@@ -3,7 +3,7 @@ import Link from 'next/link'
 import Footer from '@/shared/layout/Footer'
 import Button from '@/shared/ui/Button'
 import BannerSlider from '@/features/home/BannerSlider'
-import { getHomeData, type HomeProduct } from '@/features/home/home-api'
+import { getHomeData, type HomeMetalPrices, type HomeProduct } from '@/features/home/home-api'
 import {
   ShieldCheck,
   TrendingUp,
@@ -45,8 +45,8 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(value)
 }
 
@@ -76,6 +76,45 @@ function formatLastUpdated(products: HomeProduct[]) {
   }).format(new Date(latest))}`
 }
 
+function formatUpdateTime(products: HomeProduct[]) {
+  const latest = products
+    .map((product) => new Date(product.updatedAt).getTime())
+    .filter((time) => Number.isFinite(time))
+    .sort((left, right) => right - left)[0]
+
+  if (!latest) return 'Terakhir diupdate: belum tersedia'
+
+  return `Terakhir diupdate: ${new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(latest))} WIB`
+}
+
+function formatMetalUpdateTime(metalPrices: HomeMetalPrices, products: HomeProduct[]) {
+  const metalTimes = [
+    metalPrices.gold.current?.recordedAt,
+    metalPrices.silver.current?.recordedAt,
+  ]
+    .map((value) => value ? new Date(value).getTime() : NaN)
+    .filter((time) => Number.isFinite(time))
+
+  if (metalTimes.length > 0) {
+    const latest = metalTimes.sort((left, right) => right - left)[0]
+    return `Terakhir diupdate: ${new Intl.DateTimeFormat('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(latest))} WIB`
+  }
+
+  return formatUpdateTime(products)
+}
+
 function getUnitPrice(product: HomeProduct) {
   if (!product.weightGram) return product.price
   return product.price / product.weightGram
@@ -88,35 +127,33 @@ function findMetalProduct(products: HomeProduct[], keywords: string[]) {
   })
 }
 
-function buildPriceCards(products: HomeProduct[]) {
-  if (products.length === 0) return []
-
+function buildPriceCards(products: HomeProduct[], metalPrices: HomeMetalPrices) {
   const goldProduct = findMetalProduct(products, ['emas', 'gold', 'antam']) || products[0]
   const silverProduct = findMetalProduct(products, ['perak', 'silver'])
 
-  const cards = [
-    {
-      label: 'Emas',
-      tone: 'gold',
-      price: formatCurrency(getUnitPrice(goldProduct)),
-      meta: `${goldProduct.name} tersedia ${goldProduct.stock} pcs`,
-      movement: 'flat',
-      movementLabel: 'Harga dari admin',
-    },
-  ]
+  function createCard(label: 'Emas' | 'Perak', tone: 'gold' | 'silver', product?: HomeProduct) {
+    const summary = tone === 'gold' ? metalPrices.gold : metalPrices.silver
+    const currentPrice = summary.current?.price ?? (product ? getUnitPrice(product) : null)
+    const previousPrice = summary.previous?.price ?? null
+    const changePercent = summary.changePercent
+      ?? (currentPrice !== null && previousPrice ? ((currentPrice - previousPrice) / previousPrice) * 100 : null)
+    const trend = changePercent === null ? 'flat' : changePercent > 0 ? 'up' : changePercent < 0 ? 'down' : 'flat'
 
-  if (silverProduct) {
-    cards.push({
-      label: 'Perak',
-      tone: 'silver',
-      price: formatCurrency(getUnitPrice(silverProduct)),
-      meta: `${silverProduct.name} tersedia ${silverProduct.stock} pcs`,
-      movement: 'flat',
-      movementLabel: 'Harga dari admin',
-    })
+    return {
+      label,
+      tone,
+      price: currentPrice !== null ? formatCurrency(currentPrice) : 'Belum tersedia',
+      previousPrice: previousPrice !== null ? formatCurrency(previousPrice) : 'Belum tersedia',
+      changeLabel: changePercent !== null ? `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2).replace('.', ',')}%` : '0,00%',
+      trend,
+      backgroundImage: tone === 'gold' ? '/images/metal-gold.jpg' : '/images/metal-silver.png',
+    }
   }
 
-  return cards
+  return [
+    createCard('Emas', 'gold', goldProduct),
+    createCard('Perak', 'silver', silverProduct),
+  ]
 }
 
 function GoldBarIcon({ className }: { className?: string }) {
@@ -129,7 +166,7 @@ function GoldBarIcon({ className }: { className?: string }) {
 
 export default async function HomePage() {
   const homeData = await getHomeData()
-  const priceCards = buildPriceCards(homeData.products)
+  const priceCards = buildPriceCards(homeData.products, homeData.metalPrices)
 
   const displayProducts = homeData.products
     .slice(0, 4)
@@ -191,45 +228,73 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Price Update Section */}
-      <section className="container-main mt-12 relative z-10 flex justify-center">
-        <div className="rounded-2xl overflow-hidden shadow-2xl w-full max-w-[380px]">
-          {/* Top bar */}
-          <div className="bg-[#2a4066] text-white py-3 px-4 flex items-center justify-start gap-2 text-[13px] font-medium">
-            <svg className="w-[18px] h-[18px] text-gold-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {formatLastUpdated(homeData.products)}
+      <section id="harga-logam" className="container-main mt-12 relative z-10">
+        <div className="rounded-lg border border-outline-variant bg-white p-4 shadow-elevation-mid sm:p-5">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase text-gold-600">Harga Logam Hari Ini</p>
+              <h2 className="mt-1 text-[26px] font-bold leading-tight text-navy-900 sm:text-[32px]">Emas dan Perak</h2>
+            </div>
           </div>
 
-          {/* Stacked Content */}
-          <div className="flex flex-col">
-            {priceCards.length > 0 ? priceCards.map((card) => (
-              <div key={card.label} className={`${card.tone === 'gold' ? 'bg-[#d4af37]' : 'bg-[#b0b5b9]'} p-6 text-white relative overflow-hidden`}>
-                <div className="relative z-10">
-                  <h3 className="font-serif text-[42px] font-bold mb-4 drop-shadow-sm leading-none">{card.label}</h3>
-                  <p className="text-[15px] font-medium opacity-90 mb-1">Harga/gram</p>
-                  <p className="text-[34px] font-bold mb-6 drop-shadow-sm leading-none tracking-tight">{card.price}</p>
-
-                  <div className="flex flex-col gap-2">
-                    <div className={`flex items-center gap-1.5 font-bold text-base ${card.movement === 'down' ? 'text-[#ff4d4d]' : card.movement === 'up' ? 'text-[#21c55e]' : 'text-white'}`}>
-                      {card.movement === 'down' ? (
-                        <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 15a.75.75 0 01-.53-.22l-4.5-4.5a.75.75 0 111.06-1.06l3.22 3.22V3a.75.75 0 011.5 0v9.44l3.22-3.22a.75.75 0 111.06 1.06l-4.5 4.5A.75.75 0 0110 15z" clipRule="evenodd" /></svg>
-                      ) : card.movement === 'up' ? (
-                        <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 5a.75.75 0 01.53.22l4.5 4.5a.75.75 0 11-1.06 1.06l-3.22-3.22v9.44a.75.75 0 01-1.5 0V7.56l-3.22 3.22a.75.75 0 01-1.06-1.06l4.5-4.5A.75.75 0 0110 5z" clipRule="evenodd" /></svg>
-                      ) : null}
-                      {card.movementLabel}
-                    </div>
-                    <p className="text-[14px] font-medium opacity-90">{card.meta}</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {priceCards.map((card) => (
+              <div
+                key={card.label}
+                className={`relative overflow-hidden rounded-lg border p-5 shadow-sm ${
+                  card.tone === 'gold'
+                    ? 'border-gold-400/60 bg-[linear-gradient(135deg,#fff7db_0%,#f3c85f_42%,#8b650f_120%)]'
+                    : 'border-slate-300 bg-[linear-gradient(135deg,#ffffff_0%,#dce1e8_48%,#748091_120%)]'
+                }`}
+              >
+                <img
+                  src={card.backgroundImage}
+                  alt=""
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute right-0 top-1/2 h-[130%] max-w-none -translate-y-1/2 object-contain opacity-20 ${
+                    card.tone === 'gold' ? 'w-[58%] rotate-6' : 'w-[48%]'
+                  }`}
+                />
+                <div className="absolute inset-0 bg-white/10" aria-hidden="true" />
+                <div className="relative">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className={`text-sm font-bold ${card.tone === 'gold' ? 'text-gold-800' : 'text-navy-700'}`}>
+                      {card.label}
+                    </p>
+                    <p className="mt-4 text-xs font-bold uppercase text-navy-600">Harga hari ini</p>
+                    <h3 className="mt-1 font-body text-[30px] font-bold leading-none text-navy-900 sm:text-[34px]">
+                      {card.price}
+                    </h3>
                   </div>
+
+                  <span
+                    className={`inline-flex min-w-[82px] items-center justify-center rounded-full px-3 py-1.5 text-sm font-bold ${
+                      card.trend === 'up'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : card.trend === 'down'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-white text-navy-600 ring-1 ring-navy-200'
+                    }`}
+                  >
+                    {card.changeLabel}
+                  </span>
                 </div>
-                <div className="absolute -right-10 top-10 w-48 h-32 bg-white/10 rounded-2xl transform rotate-[15deg] pointer-events-none"></div>
+
+                <div className="mt-5 rounded-lg bg-white/80 p-4 ring-1 ring-black/5 backdrop-blur-sm">
+                  <p className="text-xs font-bold uppercase text-navy-500">Harga kemarin</p>
+                  <p className="mt-1 text-lg font-bold text-navy-900">{card.previousPrice}</p>
+                </div>
+                </div>
               </div>
-            )) : (
-              <div className="bg-[#2a4066] p-6 text-white">
-                <p className="text-sm font-semibold">Harga belum tersedia dari database.</p>
-              </div>
-            )}
+            ))}
+          </div>
+
+          <div className="mt-4 flex items-center gap-2 border-t border-navy-100 pt-4 text-xs font-semibold text-navy-500">
+            <svg className="h-4 w-4 text-gold-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {formatMetalUpdateTime(homeData.metalPrices, homeData.products)}
           </div>
         </div>
       </section>
@@ -359,7 +424,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="pb-stack-lg overflow-hidden">
+      <section id="artikel" className="pb-stack-lg overflow-hidden">
         <div className="container-main">
           <h2 className="section-heading mb-stack-md">Wawasan Investasi</h2>
         </div>

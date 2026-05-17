@@ -36,6 +36,11 @@ enum DiscountType {
   FIXED
 }
 
+enum MetalType {
+  GOLD
+  SILVER
+}
+
 // ===========================
 // MODELS
 // ===========================
@@ -276,6 +281,18 @@ model Setting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
+}
+
+model MetalPrice {
+  id         String    @id @default(uuid())
+  metal      MetalType
+  price      Decimal   @db.Decimal(15, 2)
+  recordedAt DateTime  @default(now()) @map("recorded_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([metal, recordedAt])
+  @@map("metal_prices")
 }
 
 // ===========================

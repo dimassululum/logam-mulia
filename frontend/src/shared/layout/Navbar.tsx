@@ -4,11 +4,13 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
-import { ShoppingCart, Search } from 'lucide-react'
+import { ShoppingCart } from 'lucide-react'
 import { cn } from '@/core/lib/utils'
+import { onCartUpdated, readCartCount } from '@/features/cart/cart-storage'
 
 export default function Navbar() {
   const [scrolled,  setScrolled]  = useState(false)
+  const [cartCount, setCartCount] = useState(0)
   const pathname = usePathname()
 
   useEffect(() => {
@@ -17,14 +19,20 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handler)
   }, [])
 
-  // Hide on detail pages and focused flows to avoid duplicate headers.
-  const isDetailPage = pathname.match(/^\/products\/[^/]+$/)
+  useEffect(() => {
+    const syncCartCount = () => setCartCount(readCartCount())
+
+    syncCartCount()
+    return onCartUpdated(syncCartCount)
+  }, [])
+
+  // Hide on focused flows where a compact AppBar owns navigation.
   const isFocusedFlow =
     pathname === '/cart' ||
     pathname?.startsWith('/checkout') ||
     pathname?.startsWith('/payment')
   
-  if (isDetailPage || isFocusedFlow) return null;
+  if (isFocusedFlow) return null;
 
   return (
     <>
@@ -65,14 +73,6 @@ export default function Navbar() {
 
           {/* ── Right Actions ── */}
           <div className="flex items-center gap-1 sm:gap-2 ml-auto">
-            {/* Search */}
-            <button
-              className="p-2 text-navy-900 hover:text-white hover:bg-gold-600 rounded-lg [transition-duration:var(--transition-fast)] transition-all"
-              aria-label="Cari"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-
             {/* Cart */}
             <Link
               href="/cart"
@@ -81,9 +81,11 @@ export default function Navbar() {
               aria-label="Keranjang Belanja"
             >
               <ShoppingCart className="w-5 h-5" />
-              <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                0
-              </span>
+              {cartCount > 0 ? (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold-500 px-1 text-[10px] font-bold text-navy-900 ring-2 ring-white">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              ) : null}
             </Link>
           </div>
         </nav>

@@ -64,6 +64,12 @@ const BANKS = [
   { id: 'bni',     name: 'BNI Virtual Account',     label: 'BNI' },
 ]
 
+const ZERO_EKSPEDISI_OPTIONS: EkspedisiOption[] = [
+  { id: 'jne-free', name: 'JNE', time: '-', price: 0, courier: 'JNE', service: 'Reguler' },
+  { id: 'jnt-free', name: 'J&T Express', time: '-', price: 0, courier: 'JNT', service: 'Reguler' },
+  { id: 'paxel-free', name: 'Paxel', time: '-', price: 0, courier: 'PAXEL', service: 'Reguler' },
+]
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
   const router = useRouter()
@@ -198,40 +204,10 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (deliveryType !== 'ekspedisi' || !selectedAddress?.city || checkoutItems.length === 0) return
-    let alive = true
-
-    async function loadShippingRates() {
-      setIsLoadingRates(true)
-      setShippingRateError('')
-      setSelectedEkspedisi(null)
-      try {
-        const weightGram = Math.max(1, Math.ceil(checkoutItems.reduce((sum, item) => sum + item.product.weightGram * item.quantity, 0)))
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/checkout/shipping-rates?destinationCity=${encodeURIComponent(selectedAddress.city)}&weightGram=${weightGram}`, { cache: 'no-store' })
-        const json = await response.json()
-        if (!response.ok) throw new Error(json.message)
-        if (!alive) return
-        setEkspedisiOptions((json.data || []).map((rate: any) => ({
-          id: rate.id,
-          name: rate.name,
-          time: rate.etd,
-          price: rate.price,
-          courier: rate.courier,
-          service: rate.service,
-        })))
-      } catch (error) {
-        if (alive) {
-          setEkspedisiOptions([])
-          setShippingRateError(error instanceof Error ? error.message : 'Gagal memuat ongkir RajaOngkir.')
-        }
-      } finally {
-        if (alive) setIsLoadingRates(false)
-      }
-    }
-
-    loadShippingRates()
-    return () => {
-      alive = false
-    }
+    setIsLoadingRates(false)
+    setShippingRateError('')
+    setSelectedEkspedisi(null)
+    setEkspedisiOptions(ZERO_EKSPEDISI_OPTIONS)
   }, [checkoutItems, deliveryType, selectedAddress])
 
   const handleSelectEkspedisi = (opt: EkspedisiOption) => {
@@ -479,7 +455,7 @@ export default function CheckoutPage() {
                       <p className="font-bold text-navy-900">Ekspedisi</p>
                       {selectedEkspedisi ? (
                         <p className="mt-1 text-sm text-navy-600">
-                          {selectedEkspedisi.name} · {selectedEkspedisi.time} · {formatRupiah(selectedEkspedisi.price)}
+                          {selectedEkspedisi.name}{selectedEkspedisi.service ? ` ${selectedEkspedisi.service}` : ''} · {selectedEkspedisi.time} · {formatRupiah(selectedEkspedisi.price)}
                         </p>
                       ) : (
                         <p className="mt-1 text-sm text-navy-500">
@@ -579,7 +555,9 @@ export default function CheckoutPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <p className="font-bold text-navy-900">{opt.name}</p>
-                  <p className="text-sm text-navy-500 mt-1">Estimasi: {opt.time}</p>
+                  <p className="text-sm text-navy-500 mt-1">
+                    {opt.service ? `${opt.service} · ` : ''}Estimasi: {opt.time}
+                  </p>
                 </div>
                 <p className="font-bold text-gold-600">{formatRupiah(opt.price)}</p>
               </div>

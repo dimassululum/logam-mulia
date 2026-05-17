@@ -33,7 +33,13 @@ function getItemCount(order: any) {
 }
 
 function mapPublicStatus(status: OrderStatus) {
-  if (status === OrderStatus.PAID || status === OrderStatus.PROCESSING || status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED || status === OrderStatus.COMPLETED) {
+  if (status === OrderStatus.COMPLETED) {
+    return 'selesai';
+  }
+  if (status === OrderStatus.REFUND) {
+    return 'refund';
+  }
+  if (status === OrderStatus.PAID || status === OrderStatus.PROCESSING || status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED) {
     return 'success';
   }
   if (status === OrderStatus.CANCELLED) {

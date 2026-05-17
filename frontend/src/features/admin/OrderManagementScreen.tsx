@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, HelpCircle } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
 import {
   getOrderBadgeVariant,
+  getOrderStatusLabel,
   type AdminOrderRecord,
 } from '@/features/admin/admin-management-data'
 import { fetchAdminOrders, updateAdminOrderStatus } from '@/features/orders/order-api'
@@ -15,17 +16,26 @@ import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableTo
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Modal } from '@/shared/ui'
 
-const ORDER_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
+const STATUS_FILTER_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: 'pending', label: 'Pending' },
   { value: 'success', label: 'Success' },
   { value: 'canceled', label: 'Canceled' },
+  { value: 'refund', label: 'Refund' },
+  { value: 'selesai', label: 'Selesai' },
 ]
 
-function getStatusLabel(status: OrderStatus) {
-  if (status === 'paid' || status === 'processing' || status === 'shipped' || status === 'delivered' || status === 'completed') return 'Success'
-  if (status === 'cancelled') return 'Canceled'
-  return ORDER_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
-}
+const UPDATE_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
+  { value: 'refund', label: 'Refund' },
+  { value: 'selesai', label: 'Selesai' },
+]
+
+const STATUS_GUIDE: { status: OrderStatus; description: string }[] = [
+  { status: 'pending', description: 'Pengguna belum bayar.' },
+  { status: 'success', description: 'Pengguna sudah bayar, namun barang belum diproses.' },
+  { status: 'canceled', description: 'Pengguna belum bayar hingga batas waktu habis.' },
+  { status: 'refund', description: 'Admin memilih mengembalikan biaya.' },
+  { status: 'selesai', description: 'Pesanan berhasil dikirim dengan ekspedisi atau diberikan di butik yang dipilih.' },
+]
 
 export default function OrderManagementScreen() {
   const [orders, setOrders] = useState<AdminOrderRecord[]>([])
@@ -35,6 +45,7 @@ export default function OrderManagementScreen() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [shippingFilter, setShippingFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [isGuideOpen, setIsGuideOpen] = useState(false)
   const [activeOrder, setActiveOrder] = useState<AdminOrderRecord | null>(null)
   const [nextStatus, setNextStatus] = useState<OrderStatus>('pending')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
@@ -77,7 +88,7 @@ export default function OrderManagementScreen() {
           order.customerName.toLowerCase().includes(keyword) ||
           order.customerEmail.toLowerCase().includes(keyword)
 
-        const normalizedStatus = order.status === 'cancelled' ? 'canceled' : ['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(order.status) ? 'success' : order.status
+        const normalizedStatus = order.status === 'cancelled' ? 'canceled' : ['paid', 'processing', 'shipped', 'delivered'].includes(order.status) ? 'success' : order.status === 'completed' ? 'selesai' : order.status
         const matchesStatus = statusFilter === 'all' || normalizedStatus === statusFilter
         const matchesShipping =
           shippingFilter === 'all' || order.shippingMethod.toLowerCase().includes(shippingFilter.toLowerCase())
@@ -93,7 +104,7 @@ export default function OrderManagementScreen() {
 
   function openStatusModal(order: AdminOrderRecord) {
     setActiveOrder(order)
-    setNextStatus(order.status === 'cancelled' ? 'canceled' : ['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(order.status) ? 'success' : order.status)
+    setNextStatus(order.status === 'refund' ? 'refund' : 'selesai')
   }
 
   function resetFilters() {
@@ -146,7 +157,7 @@ export default function OrderManagementScreen() {
         <p className="font-medium text-navy-900">{order.shippingMethod}</p>
         <p className="mt-1 text-xs text-navy-500">{order.trackingNumber || '-'}</p>
       </div>,
-      <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getStatusLabel(order.status)} />,
+      <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
       <div key={`${order.id}-actions`} className="flex items-center gap-2">
         <Link
           href={`/admin/orders/${order.id}`}
@@ -161,7 +172,7 @@ export default function OrderManagementScreen() {
     ],
     mobileTitle: order.id,
     mobileSubtitle: order.customerName,
-    mobileAside: <Badge variant={getOrderBadgeVariant(order.status)} label={getStatusLabel(order.status)} />,
+    mobileAside: <Badge variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
     mobileMeta: (
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
@@ -191,7 +202,15 @@ export default function OrderManagementScreen() {
 
   return (
     <div className="space-y-4">
-      <AdminPageHeader title="Pesanan" />
+      <AdminPageHeader
+        title="Pesanan"
+        actions={
+          <Button variant="secondary" onClick={() => setIsGuideOpen(true)}>
+            <HelpCircle className="h-4 w-4" />
+            Panduan Status
+          </Button>
+        }
+      />
 
       <InlineToast toast={toast} />
 
@@ -217,7 +236,7 @@ export default function OrderManagementScreen() {
 
       <FilterModal isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Filter Pesanan">
         <div className="grid gap-4">
-          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ value: 'all', label: 'Semua status' }, ...ORDER_STATUS_OPTIONS]} />
+          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ value: 'all', label: 'Semua status' }, ...STATUS_FILTER_OPTIONS]} />
           <FilterSelect label="Pengiriman" value={shippingFilter} onChange={setShippingFilter} options={[{ value: 'all', label: 'Semua pengiriman' }, { value: 'JNE', label: 'JNE' }, { value: 'POS', label: 'POS' }, { value: 'TIKI', label: 'TIKI' }, { value: 'Self Pickup', label: 'Self Pickup' }]} />
         </div>
       </FilterModal>
@@ -227,7 +246,7 @@ export default function OrderManagementScreen() {
           <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
             Status
             <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as OrderStatus)} className={adminSelectClassName}>
-              {ORDER_STATUS_OPTIONS.map((option) => (
+              {UPDATE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
@@ -236,6 +255,19 @@ export default function OrderManagementScreen() {
             <Button variant="ghost" onClick={() => setActiveOrder(null)} disabled={isSavingStatus}>Batal</Button>
             <Button onClick={applyStatusUpdate} isLoading={isSavingStatus}>Simpan</Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} title="Panduan Status Pesanan" size="md">
+        <div className="space-y-3">
+          {STATUS_GUIDE.map((item) => (
+            <div key={item.status} className="rounded-xl border border-navy-100 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge variant={getOrderBadgeVariant(item.status)} label={getOrderStatusLabel(item.status)} />
+                <p className="text-sm font-medium text-navy-700">{item.description}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </Modal>
 

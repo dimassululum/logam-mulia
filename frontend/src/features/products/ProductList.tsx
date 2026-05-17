@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Product } from '@/core/types'
 import ProductCard from './ProductCard'
 import { ProductCardSkeleton } from '@/shared/ui/Skeleton'
-import { Search, ListFilter, Check } from 'lucide-react'
-import { addProductToCart } from '@/features/cart/cart-storage'
+import { Search, ArrowUpDown, Check } from 'lucide-react'
 
 interface ProductListProps {
   products: Product[]
@@ -50,7 +49,8 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
     .sort((a, b) => {
       if (sort === 'price-asc')  return a.totalPrice - b.totalPrice
       if (sort === 'price-desc') return b.totalPrice - a.totalPrice
-      // bestseller & newest use default order for now
+      if (sort === 'bestseller') return b.soldCount - a.soldCount
+      if (sort === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       return 0
     })
 
@@ -69,60 +69,60 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
         />
       </div>
 
-      {/* Category Tabs */}
-      <div className="mb-4">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar" role="tablist">
-          {categories.map((cat) => (
-            <button
-              key={cat.value}
-              role="tab"
-              id={`tab-${cat.value}`}
-              aria-selected={category === cat.value}
-              onClick={() => setCategory(cat.value)}
-              className={[
-                'flex-shrink-0 text-sm font-semibold px-4 py-2 rounded-full border transition-all duration-200',
-                category === cat.value
-                  ? 'bg-[#D4A84B] text-navy-900 border-[#D4A84B] shadow-sm'
-                  : 'bg-white text-navy-600 border-navy-200 hover:border-[#D4A84B] hover:text-navy-900',
-              ].join(' ')}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Action Row: Sort Dropdown */}
-      <div className="flex justify-end items-center mb-6 relative" ref={sortRef}>
-        <button
-          onClick={() => setSortOpen(prev => !prev)}
-          className="flex items-center gap-2 text-sm font-medium text-navy-500 hover:text-navy-900 transition-colors"
-          aria-haspopup="listbox"
-          aria-expanded={sortOpen}
-        >
-          <ListFilter className="w-4 h-4" />
-          Urutkan
-        </button>
-
-        {sortOpen && (
-          <div className="absolute right-0 top-[calc(100%+8px)] z-30 bg-white border border-navy-200 rounded-xl shadow-lg overflow-hidden min-w-[180px] animate-in">
-            {SORT_OPTIONS.map((opt) => (
+      <div className="mb-6 flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar" role="tablist">
+            {categories.map((cat) => (
               <button
-                key={opt.value}
-                onClick={() => { setSort(opt.value); setSortOpen(false) }}
+                key={cat.value}
+                role="tab"
+                id={`tab-${cat.value}`}
+                aria-selected={category === cat.value}
+                onClick={() => setCategory(cat.value)}
                 className={[
-                  'w-full flex items-center justify-between px-4 py-3 text-sm text-left transition-colors',
-                  sort === opt.value
-                    ? 'bg-gold-50 text-gold-700 font-semibold'
-                    : 'text-navy-700 hover:bg-navy-50',
+                  'flex-shrink-0 text-sm font-semibold px-4 py-2 rounded-full border transition-all duration-200',
+                  category === cat.value
+                    ? 'bg-[#D4A84B] text-navy-900 border-[#D4A84B] shadow-sm'
+                    : 'bg-white text-navy-600 border-navy-200 hover:border-[#D4A84B] hover:text-navy-900',
                 ].join(' ')}
               >
-                {opt.label}
-                {sort === opt.value && <Check className="w-4 h-4 text-gold-500" />}
+                {cat.label}
               </button>
             ))}
           </div>
-        )}
+        </div>
+
+        <div className="relative shrink-0" ref={sortRef}>
+          <button
+            onClick={() => setSortOpen(prev => !prev)}
+            className="flex h-10 items-center gap-2 rounded-full border border-navy-200 bg-white px-3 text-sm font-semibold text-navy-700 shadow-sm transition-colors hover:border-gold-400 hover:text-navy-900"
+            aria-haspopup="listbox"
+            aria-expanded={sortOpen}
+          >
+            <ArrowUpDown className="w-4 h-4" />
+            Urutkan
+          </button>
+
+          {sortOpen && (
+            <div className="absolute right-0 top-[calc(100%+8px)] z-30 bg-white border border-navy-200 rounded-xl shadow-lg overflow-hidden min-w-[180px] animate-in">
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => { setSort(opt.value); setSortOpen(false) }}
+                  className={[
+                    'w-full flex items-center justify-between px-4 py-3 text-sm text-left transition-colors',
+                    sort === opt.value
+                      ? 'bg-gold-50 text-gold-700 font-semibold'
+                      : 'text-navy-700 hover:bg-navy-50',
+                  ].join(' ')}
+                >
+                  {opt.label}
+                  {sort === opt.value && <Check className="w-4 h-4 text-gold-500" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Grid */}
@@ -142,7 +142,6 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
             <ProductCard
               key={product.id}
               product={product}
-              onAddToCart={(p) => addProductToCart(p)}
             />
           ))}
         </div>

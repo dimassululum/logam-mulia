@@ -6,6 +6,16 @@ export interface ProductDetail extends Product {
   images: string[]
   cert: string
   dimensions: string
+  reviews: ProductReview[]
+}
+
+export interface ProductReview {
+  id: string
+  name: string
+  rating: number
+  comment: string
+  imageUrl: string
+  createdAt: string
 }
 
 export interface StorefrontVoucher {
@@ -36,10 +46,40 @@ function toNumber(value: unknown) {
   return Number.isFinite(number) ? number : 0
 }
 
+function resolveApiOrigin() {
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '') || API_URL
+  try {
+    const url = new URL(configuredUrl)
+    if (url.pathname.endsWith('/api')) {
+      url.pathname = url.pathname.slice(0, -4) || '/'
+    }
+    return url.origin + url.pathname.replace(/\/+$/, '')
+  } catch {
+    return ''
+  }
+}
+
+export function resolveProductImageUrl(value: string) {
+  if (!value) return ''
+
+  const apiOrigin = resolveApiOrigin()
+  if (value.startsWith('/uploads/')) return `${apiOrigin}${value}`
+
+  try {
+    const url = new URL(value)
+    if (url.pathname.startsWith('/api/uploads/')) {
+      url.pathname = url.pathname.replace(/^\/api\/uploads\//, '/uploads/')
+    }
+    return url.toString()
+  } catch {
+    return value
+  }
+}
+
 export function mapApiProduct(product: any): ProductDetail {
   const images = (product.images || [])
     .sort((left: any, right: any) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
-    .map((image: any) => image.imageUrl)
+    .map((image: any) => resolveProductImageUrl(image.imageUrl))
     .filter(Boolean)
 
   const weightGram = toNumber(product.weightGram)
@@ -57,11 +97,24 @@ export function mapApiProduct(product: any): ProductDetail {
     imageUrl: images[0] || '',
     category: product.category?.name || 'Lainnya',
     purity: product.kadar || '',
+    displayRating: Math.min(5, Math.max(0, toNumber(product.displayRating ?? product.rating ?? 5))),
+    reviewCount: toNumber(product.reviewCount),
+    soldCount: toNumber(product.soldCount),
     createdAt: product.createdAt || '',
     updatedAt: product.updatedAt || '',
     images,
     cert: 'LBMA Certified',
     dimensions: '-',
+    reviews: Array.isArray(product.displayReviews)
+      ? product.displayReviews.map((review: any) => ({
+          id: review.id,
+          name: review.reviewerName || 'Pelanggan',
+          rating: Math.min(5, Math.max(0, toNumber(product.displayRating ?? 5))),
+          comment: review.description || '',
+          imageUrl: resolveProductImageUrl(review.imageUrl || ''),
+          createdAt: review.createdAt || '',
+        }))
+      : [],
   }
 }
 

@@ -770,6 +770,7 @@ export function getOrderBadgeVariant(status: OrderStatus) {
     case 'delivered':
       return 'delivered'
     case 'completed':
+    case 'selesai':
       return 'completed'
     case 'refund':
       return 'refund'
@@ -778,6 +779,29 @@ export function getOrderBadgeVariant(status: OrderStatus) {
       return 'cancelled'
     default:
       return 'neutral'
+  }
+}
+
+export function getOrderStatusLabel(status: OrderStatus) {
+  switch (status) {
+    case 'pending':
+      return 'Pending'
+    case 'paid':
+    case 'success':
+    case 'processing':
+    case 'shipped':
+    case 'delivered':
+      return 'Success'
+    case 'completed':
+    case 'selesai':
+      return 'Selesai'
+    case 'refund':
+      return 'Refund'
+    case 'cancelled':
+    case 'canceled':
+      return 'Canceled'
+    default:
+      return status
   }
 }
 

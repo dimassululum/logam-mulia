@@ -4,6 +4,7 @@ import type { OrderStatus } from '@/core/types'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import Badge from '@/shared/ui/Badge'
 import { formatRupiah } from '@/core/lib/utils'
+import { getOrderBadgeVariant, getOrderStatusLabel } from '@/features/admin/admin-management-data'
 
 export interface DashboardMetric {
   label: string
@@ -112,29 +113,6 @@ export function formatAdminDate(date: string) {
   }).format(new Date(date))
 }
 
-export function getOrderBadgeVariant(status: OrderStatus) {
-  switch (status) {
-    case 'pending':
-      return 'pending'
-    case 'paid':
-      return 'paid'
-    case 'processing':
-      return 'processing'
-    case 'shipped':
-      return 'shipped'
-    case 'delivered':
-      return 'delivered'
-    case 'completed':
-      return 'completed'
-    case 'refund':
-      return 'refund'
-    case 'cancelled':
-      return 'cancelled'
-    default:
-      return 'neutral'
-  }
-}
-
 export function buildRecentOrderRows(orders: RecentOrder[]): AdminTableRow[] {
   return orders.map((order) => ({
     id: order.id,
@@ -154,7 +132,7 @@ export function buildRecentOrderRows(orders: RecentOrder[]): AdminTableRow[] {
       <Badge
         key={`${order.id}-status`}
         variant={getOrderBadgeVariant(order.status)}
-        label={order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+        label={getOrderStatusLabel(order.status)}
       />,
       <span key={`${order.id}-date`} className="text-sm text-navy-600">
         {formatAdminDate(order.createdAt)}
@@ -170,7 +148,7 @@ export function buildRecentOrderRows(orders: RecentOrder[]): AdminTableRow[] {
     mobileAside: (
       <Badge
         variant={getOrderBadgeVariant(order.status)}
-        label={order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+        label={getOrderStatusLabel(order.status)}
       />
     ),
     mobileMeta: (

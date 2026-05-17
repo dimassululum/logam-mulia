@@ -109,6 +109,14 @@ export default function ProductDetailScreen({ productId }: { productId: string }
               <p className="text-xs text-navy-500">SKU / Slug</p>
               <p className="mt-2 font-semibold text-navy-900 truncate" title={product.slug}>{product.slug}</p>
             </div>
+            <div className="rounded-2xl bg-navy-50 p-4">
+              <p className="text-xs text-navy-500">Rating Tampilan</p>
+              <p className="mt-2 font-semibold text-navy-900">{Number(product.displayRating ?? 5).toFixed(1)}</p>
+            </div>
+            <div className="rounded-2xl bg-navy-50 p-4">
+              <p className="text-xs text-navy-500">Ulasan / Terjual</p>
+              <p className="mt-2 font-semibold text-navy-900">{product.reviewCount ?? 0} ulasan · {product.soldCount ?? 0} terjual</p>
+            </div>
           </div>
 
           {product.description && (
