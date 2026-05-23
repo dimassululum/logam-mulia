@@ -37,10 +37,19 @@ export const env = {
   RAJAONGKIR_ORIGIN_SEARCH: process.env.RAJAONGKIR_ORIGIN_SEARCH || 'Jakarta Timur',
 
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',
-  EMAIL_FROM: process.env.EMAIL_FROM || 'noreply@logam-mulia.com',
+  EMAIL_FROM: process.env.EMAIL_FROM || 'noreply@logam-mulia-antam.com',
+  ADMIN_ORDER_NOTIFICATION_EMAIL: process.env.ADMIN_ORDER_NOTIFICATION_EMAIL || 'admin@logam-mulia-antam.com',
+  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_PORT: parseInt(process.env.SMTP_PORT || '587', 10),
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASS: process.env.SMTP_PASS || '',
+  SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+  SMTP_TLS_REJECT_UNAUTHORIZED: process.env.SMTP_TLS_REJECT_UNAUTHORIZED
+    ? process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false'
+    : (process.env.NODE_ENV || 'development') !== 'development',
 
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',
-  MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10),
+  MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || '10', 10),
 
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
   FRONTEND_URLS: (process.env.FRONTEND_URLS || '')

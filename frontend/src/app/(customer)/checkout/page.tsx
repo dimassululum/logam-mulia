@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, HeadphonesIcon, Lock, Mail, MapPin, Plus, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
+import { apiClient } from '@/core/lib/api-client'
 import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 import AppBar from '@/shared/ui/AppBar'
 import Button from '@/shared/ui/Button'
@@ -77,6 +78,8 @@ const ZERO_EKSPEDISI_OPTIONS: EkspedisiOption[] = [
 ]
 
 const API_URL = resolvePublicApiBaseUrl()
+const MAX_KTP_FILE_SIZE_MB = 10
+const MAX_KTP_FILE_SIZE_BYTES = MAX_KTP_FILE_SIZE_MB * 1024 * 1024
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
@@ -100,6 +103,7 @@ export default function CheckoutPage() {
   const [checkoutItems, setCheckoutItems] = useState<LocalCartItem[]>([])
   const [checkoutVoucher, setCheckoutVoucher] = useState<ClaimedVoucher | null>(null)
   const [ktpFile, setKtpFile] = useState<File | null>(null)
+  const [ktpFileError, setKtpFileError] = useState('')
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [butikOptions, setButikOptions] = useState<ButikOption[]>([])
@@ -144,23 +148,62 @@ export default function CheckoutPage() {
   }, [])
 
   useEffect(() => {
-    const storedProfile = readGuestCheckoutProfile()
+    let alive = true
 
-    if (!storedProfile) {
-      router.replace(`/checkout/email${window.location.search}`)
-      return
+    async function loadCustomerProfile() {
+      if (!localStorage.getItem('access_token')) {
+        router.replace(`/login?redirect=${encodeURIComponent(`/checkout${window.location.search}`)}`)
+        return
+      }
+
+      try {
+        const { data } = await apiClient.get('/auth/me')
+        if (!alive) return
+        const user = data.data
+        const addresses: GuestCheckoutAddress[] = (user.addresses || []).map((address: any) => ({
+          id: address.id,
+          fullName: address.fullName || user.name,
+          phone: address.phone || user.phone || '',
+          address: address.address,
+          city: address.city,
+          district: address.district || '',
+          village: address.village || '',
+          province: address.province,
+          postalCode: address.postalCode,
+        }))
+        const nextProfile: GuestCheckoutProfile = {
+          email: user.email,
+          ordererName: user.name,
+          phone: user.phone || '',
+          found: true,
+          hasKtp: Boolean(user.ktpUrl),
+          ktpUrl: user.ktpUrl || null,
+          addresses,
+        }
+        setGuestProfile(nextProfile)
+        const storedProfile = readGuestCheckoutProfile()
+        const storedAddresses = storedProfile?.email === user.email
+          ? storedProfile.addresses ?? (storedProfile.address ? [storedProfile.address] : [])
+          : []
+        const nextAddresses = addresses.length > 0 ? addresses : storedAddresses
+        setOrdererName(user.name)
+        setAddressHistory(nextAddresses)
+        setSelectedAddress(nextAddresses[0] ?? null)
+      } catch {
+        if (alive) router.replace(`/login?redirect=${encodeURIComponent(`/checkout${window.location.search}`)}`)
+      }
     }
 
-    setGuestProfile(storedProfile)
-    const storedAddresses = storedProfile.addresses ?? (storedProfile.address ? [storedProfile.address] : [])
-    setOrdererName(storedProfile.ordererName ?? storedAddresses[0]?.fullName ?? '')
-    setAddressHistory(storedAddresses)
-    setSelectedAddress(storedAddresses[0] ?? null)
+    loadCustomerProfile()
 
     const storedCheckoutItems = readCheckoutItems()
     const checkedCartItems = readCartItems().filter((item) => item.checked)
     setCheckoutItems(storedCheckoutItems.length > 0 ? storedCheckoutItems : checkedCartItems)
     setCheckoutVoucher(readCheckoutVoucher())
+
+    return () => {
+      alive = false
+    }
   }, [router])
 
   useEffect(() => {
@@ -337,6 +380,24 @@ export default function CheckoutPage() {
     setShowButikModal(false)
   }
 
+  const handleKtpFileChange = (file?: File | null) => {
+    setCheckoutError('')
+    setKtpFileError('')
+
+    if (!file) {
+      setKtpFile(null)
+      return
+    }
+
+    if (file.size > MAX_KTP_FILE_SIZE_BYTES) {
+      setKtpFile(null)
+      setKtpFileError(`Ukuran file KTP terlalu besar. Maksimal ${MAX_KTP_FILE_SIZE_MB}MB.`)
+      return
+    }
+
+    setKtpFile(file)
+  }
+
   const handleAddressChange = (field: keyof GuestCheckoutAddress, value: string) => {
     setAddressForm((current) => ({ ...current, [field]: value }))
   }
@@ -424,8 +485,8 @@ export default function CheckoutPage() {
         discountAmount: discount,
       })
       router.push('/payment')
-    } catch {
-      setCheckoutError('Gagal menyimpan data checkout. Coba lagi sebentar.')
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : 'Gagal menyimpan data checkout. Coba lagi sebentar.')
     } finally {
       setIsSavingProfile(false)
     }
@@ -487,15 +548,16 @@ export default function CheckoutPage() {
                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-navy-300 bg-surface p-6 text-center transition-colors [transition-duration:var(--transition-fast)] hover:bg-navy-50">
                   <UploadCloud className="mb-3 h-9 w-9 text-navy-400" />
                   <p className="mb-1 font-bold text-navy-900">{ktpFile ? ktpFile.name : 'Unggah KTP'}</p>
-                  <p className="text-sm text-navy-500">JPG, PNG, atau WebP</p>
+                  <p className="text-sm text-navy-500">JPG, PNG, atau WebP. Maksimal {MAX_KTP_FILE_SIZE_MB}MB.</p>
                   <input
                     type="file"
                     className="hidden"
                     accept=".jpg,.jpeg,.png,.webp"
-                    onChange={(event) => setKtpFile(event.target.files?.[0] ?? null)}
+                    onChange={(event) => handleKtpFileChange(event.target.files?.[0] ?? null)}
                   />
                 </label>
               )}
+              {ktpFileError ? <p className="mt-2 text-sm font-semibold text-red-600">{ktpFileError}</p> : null}
             </div>
           </div>
         </Card>

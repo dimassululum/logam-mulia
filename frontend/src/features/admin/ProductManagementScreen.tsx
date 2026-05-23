@@ -72,6 +72,11 @@ function getStockTone(stock: number) {
   return 'text-navy-900'
 }
 
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const maybeError = error as { response?: { data?: { message?: string } } }
+  return maybeError.response?.data?.message || fallback
+}
+
 export default function ProductManagementScreen() {
   const [products, setProducts] = useState<any[]>([])
   const [categories, setCategories] = useState<any[]>([])
@@ -90,6 +95,8 @@ export default function ProductManagementScreen() {
   const [priceFields, setPriceFields] = useState<ProductPriceField[]>([])
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
   const [deleteScope, setDeleteScope] = useState<'single' | 'bulk'>('single')
+  const [deleteError, setDeleteError] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
 
   const fetchData = async () => {
@@ -254,6 +261,8 @@ export default function ProductManagementScreen() {
   }
 
   async function deleteSelectedProducts() {
+    setDeleteError('')
+    setIsDeleting(true)
     try {
       await Promise.all(selectedProductIds.map(id => apiClient.delete(`/products/${id}`)))
       setSelectedProductIds([])
@@ -262,11 +271,15 @@ export default function ProductManagementScreen() {
       fetchData()
     } catch (err) {
       console.error(err)
-      showToast('Gagal menghapus produk.', 'error')
+      setDeleteError(getApiErrorMessage(err, 'Gagal menghapus produk.'))
+    } finally {
+      setIsDeleting(false)
     }
   }
 
   async function deleteSingleProduct(productId: string) {
+    setDeleteError('')
+    setIsDeleting(true)
     try {
       await apiClient.delete(`/products/${productId}`)
       setSelectedProductIds((current) => current.filter((id) => id !== productId))
@@ -275,7 +288,9 @@ export default function ProductManagementScreen() {
       fetchData()
     } catch (err) {
       console.error(err)
-      showToast('Gagal menghapus produk.', 'error')
+      setDeleteError(getApiErrorMessage(err, 'Gagal menghapus produk.'))
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -387,6 +402,7 @@ export default function ProductManagementScreen() {
           </Link>
           <IconActionButton label={`Hapus ${product.name}`} tone="delete" onClick={() => {
             setDeleteScope('single')
+            setDeleteError('')
             setDeleteTarget(product)
           }} />
         </div>,
@@ -436,6 +452,7 @@ export default function ProductManagementScreen() {
               </Link>
               <IconActionButton label={`Hapus ${product.name}`} tone="delete" onClick={() => {
                 setDeleteScope('single')
+                setDeleteError('')
                 setDeleteTarget(product)
               }} />
             </div>
@@ -543,14 +560,31 @@ export default function ProductManagementScreen() {
         </div>
       </Modal>
 
-      <Modal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Hapus Produk" size="sm">
+      <Modal
+        isOpen={deleteTarget !== null}
+        onClose={() => {
+          if (isDeleting) return
+          setDeleteError('')
+          setDeleteTarget(null)
+        }}
+        title="Hapus Produk"
+        size="sm"
+      >
         <div className="space-y-4">
           <p className="text-sm text-navy-600">
             {deleteScope === 'bulk' ? `${selectedProductIds.length} produk akan dihapus.` : `Produk ${deleteTarget?.name ?? ''} akan dihapus.`}
           </p>
+          {deleteError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {deleteError}
+            </div>
+          ) : null}
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Batal</Button>
-            <Button variant="danger" onClick={() =>
+            <Button variant="ghost" disabled={isDeleting} onClick={() => {
+              setDeleteError('')
+              setDeleteTarget(null)
+            }}>Batal</Button>
+            <Button variant="danger" isLoading={isDeleting} onClick={() =>
               deleteScope === 'bulk' && deleteTarget ? deleteSelectedProducts() : deleteTarget ? deleteSingleProduct(deleteTarget.id) : undefined
             }>
               Hapus

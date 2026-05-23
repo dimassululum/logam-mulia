@@ -193,15 +193,33 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
 }
 
 export async function deleteProduct(id: string) {
-  const existing = await prisma.product.findUnique({ where: { id } });
+  const existing = await prisma.product.findUnique({
+    where: { id },
+    include: {
+      _count: {
+        select: {
+          orderItems: true,
+          reviews: true,
+        },
+      },
+    },
+  });
   if (!existing) {
     throw new NotFoundError('Produk');
   }
 
-  // Soft delete
-  return prisma.product.update({
+  if (existing._count.orderItems > 0 || existing._count.reviews > 0) {
+    throw new ConflictError('Produk tidak bisa dihapus permanen karena sudah digunakan pada pesanan atau ulasan');
+  }
+
+  const meta = await readProductDisplayMeta();
+  if (meta[id]) {
+    delete meta[id];
+    await writeProductDisplayMeta(meta);
+  }
+
+  return prisma.product.delete({
     where: { id },
-    data: { isActive: false },
   });
 }
 

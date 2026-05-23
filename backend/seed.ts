@@ -4,9 +4,9 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash('admin123', 12);
+  const passwordHash = await bcrypt.hash('Sandinya2026_', 12);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@logam-mulia.com' },
+    where: { email: 'admin@logam-mulia-antam.com' },
     update: {
       name: 'Admin Utama',
       passwordHash,
@@ -15,7 +15,7 @@ async function main() {
       isKycVerified: true,
     },
     create: {
-      email: 'admin@logam-mulia.com',
+      email: 'admin@logam-mulia-antam.com',
       name: 'Admin Utama',
       passwordHash,
       role: 'SUPER_ADMIN',

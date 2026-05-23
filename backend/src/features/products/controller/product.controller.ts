@@ -39,7 +39,7 @@ export async function updateProduct(req: Request, res: Response) {
 
 export async function deleteProduct(req: Request, res: Response) {
   await productService.deleteProduct(req.params.id);
-  sendSuccess({ res, message: 'Produk berhasil diarsipkan (soft delete)' });
+  sendSuccess({ res, message: 'Produk berhasil dihapus' });
 }
 
 export async function uploadImage(req: Request, res: Response) {

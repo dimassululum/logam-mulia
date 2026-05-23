@@ -13,6 +13,16 @@ export async function getOrder(req: Request, res: Response) {
   sendSuccess({ res, data: order });
 }
 
+export async function getMyOrders(req: Request, res: Response) {
+  const orders = await orderService.getOrdersByUserId(req.user!.userId);
+  sendSuccess({ res, data: orders });
+}
+
+export async function getMyOrder(req: Request, res: Response) {
+  const order = await orderService.getOrderByIdForUser(req.params.id, req.user!.userId);
+  sendSuccess({ res, data: order });
+}
+
 export async function createOrder(req: Request, res: Response) {
   const input = createOrderSchema.parse(req.body);
   const order = await orderService.createOrder(input);
@@ -26,6 +36,6 @@ export async function updateOrderStatus(req: Request, res: Response) {
 }
 
 export async function markOrderPaid(req: Request, res: Response) {
-  const order = await orderService.markOrderPaid(req.params.id);
+  const order = await orderService.markOrderPaid(req.params.id, req.user!.userId, req.user!.role);
   sendSuccess({ res, message: 'Pembayaran pesanan berhasil dikonfirmasi', data: order });
 }

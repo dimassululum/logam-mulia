@@ -57,6 +57,8 @@ model User {
   isActive       Boolean        @default(true) @map("is_active")
   lastLoginAt    DateTime?      @map("last_login_at")
   refreshToken   String?        @map("refresh_token")
+  passwordResetTokenHash String? @map("password_reset_token_hash")
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
   addresses      Address[]
   orders         Order[]
   reviews        Review[]
@@ -66,6 +68,7 @@ model User {
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
   @@map("users")
+  @@index([passwordResetTokenHash])
 }
 
 model Address {

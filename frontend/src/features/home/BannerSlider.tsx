@@ -44,18 +44,18 @@ export default function BannerSlider({ banners = [] }: { banners?: HomeBanner[] 
   }
 
   return (
-    <div className="relative w-full group">
+    <div className="group relative w-full">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar rounded-2xl shadow-elevation-mid scroll-smooth"
+        className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar scroll-smooth"
       >
         {visibleBanners.map((banner) => (
-          <div key={banner.id} className="w-full flex-none snap-center relative">
+          <div key={banner.id} className="relative aspect-square w-full flex-none snap-center overflow-hidden bg-white">
             <img
               src={banner.imageUrl}
               alt={banner.title}
-              className="w-full h-auto rounded-2xl shadow-elevation-mid"
+              className="h-full w-full object-contain"
             />
           </div>
         ))}

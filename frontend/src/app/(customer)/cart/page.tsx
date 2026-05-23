@@ -23,10 +23,12 @@ export default function CartPage() {
   const [claimedVouchers, setClaimedVouchers] = useState<ClaimedVoucher[]>([])
   const [showVoucherModal, setShowVoucherModal] = useState(false)
   const [activeVoucherId, setActiveVoucherId] = useState('')
+  const [checkoutHref, setCheckoutHref] = useState('/login?redirect=/checkout')
 
   useEffect(() => {
     setItems(readCartItems())
     setClaimedVouchers(readClaimedVouchers())
+    setCheckoutHref(localStorage.getItem('access_token') ? '/checkout' : '/login?redirect=/checkout')
   }, [])
 
   function persistItems(nextItems: LocalCartItem[]) {
@@ -186,7 +188,7 @@ export default function CartPage() {
             </div>
           </div>
           <Link
-            href="/checkout/email"
+            href={checkoutHref}
             onClick={prepareCheckout}
             className={`font-bold px-6 py-3.5 rounded-xl flex items-center gap-2 transition-all shadow-lg text-sm whitespace-nowrap ${
               totalPrice > 0 ? 'bg-gold-400 text-navy-900 hover:brightness-105 active:scale-95 shadow-gold-400/20' : 'bg-navy-100 text-navy-400 pointer-events-none'

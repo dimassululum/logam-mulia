@@ -22,9 +22,11 @@ export default function ProductDetailActions({
   vouchers: StorefrontVoucher[]
 }) {
   const [claimedIds, setClaimedIds] = useState<string[]>([])
+  const [checkoutHref, setCheckoutHref] = useState('/login?redirect=/checkout')
 
   useEffect(() => {
     setClaimedIds(readClaimedVouchers().map((voucher) => voucher.id))
+    setCheckoutHref(localStorage.getItem('access_token') ? '/checkout' : '/login?redirect=/checkout')
   }, [])
 
   function handleAddToCart() {
@@ -94,7 +96,7 @@ export default function ProductDetailActions({
         >
           Tambah ke Keranjang
         </button>
-        <Link href="/checkout/email" onClick={handleBuyNow} className="flex flex-1 flex-col items-center justify-center">
+        <Link href={checkoutHref} onClick={handleBuyNow} className="flex flex-1 flex-col items-center justify-center">
           <Button variant="primary" size="md" fullWidth className="h-full rounded-xl flex-col gap-1" disabled={product.stock === 0}>
             <Lock className="w-5 h-5" />
             <span className="text-xs font-bold uppercase tracking-wider">Beli Sekarang</span>

@@ -1,6 +1,9 @@
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, Prisma, Role } from '@prisma/client';
 import { prisma } from '../../../core/config/database';
-import { BadRequestError, NotFoundError } from '../../../core/utils/errors';
+import { env } from '../../../core/config/env';
+import { sendEmail } from '../../../core/utils/email';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../../core/utils/errors';
+import { logger } from '../../../core/utils/logger';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '../schema/order.schema';
 
 const orderInclude = {
@@ -48,6 +51,184 @@ function mapPublicStatus(status: OrderStatus) {
   return 'pending';
 }
 
+function formatRupiah(value: number) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export async function sendNewOrderAdminNotification(order: Prisma.OrderGetPayload<{ include: typeof orderInclude }>) {
+  const subtotalAmount = order.items.reduce((sum, item) => sum + toMoney(item.subtotal), 0);
+  const shippingFee = toMoney(order.shippingCost);
+  const voucherAmount = toMoney(order.discountAmount);
+  const grandTotalAmount = toMoney(order.grandTotal);
+  const deliveryMethod = order.shippingCourier === 'SELFPICKUP' ? 'Self Pickup' : order.shippingCourier || 'Ekspedisi';
+  const adminOrderUrl = `${env.FRONTEND_URL}/admin/orders/${encodeURIComponent(order.id)}`;
+  const itemLines = order.items.map((item) => {
+    const line = `${item.productName} x${item.quantity} - ${formatRupiah(toMoney(item.subtotal))}`;
+    return `- ${line}`;
+  });
+  const htmlItems = order.items
+    .map((item) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;">${escapeHtml(item.productName)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:center;">${item.quantity}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:right;">${escapeHtml(formatRupiah(toMoney(item.subtotal)))}</td>
+      </tr>
+    `)
+    .join('');
+
+  const text = [
+    `Pesanan baru masuk: ${order.id}`,
+    '',
+    `Customer: ${order.user.name}`,
+    `Email: ${order.user.email}`,
+    `Telepon: ${order.user.phone || '-'}`,
+    `Status: ${order.status}`,
+    `Pengiriman: ${deliveryMethod}${order.shippingService ? ` - ${order.shippingService}` : ''}`,
+    `Alamat: ${order.shippingAddress}`,
+    '',
+    'Item:',
+    ...itemLines,
+    '',
+    `Subtotal: ${formatRupiah(subtotalAmount)}`,
+    `Ongkir: ${formatRupiah(shippingFee)}`,
+    `Diskon: ${formatRupiah(voucherAmount)}`,
+    `Total: ${formatRupiah(grandTotalAmount)}`,
+    '',
+    `Lihat detail: ${adminOrderUrl}`,
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;">
+      <h2 style="margin:0 0 16px;">Pesanan baru masuk</h2>
+      <p style="margin:0 0 16px;">Ada pesanan baru dengan nomor <strong>${escapeHtml(order.id)}</strong>.</p>
+      <table style="width:100%;max-width:640px;border-collapse:collapse;margin-bottom:16px;">
+        <tr><td style="padding:4px 0;color:#6b7280;">Customer</td><td style="padding:4px 0;text-align:right;"><strong>${escapeHtml(order.user.name)}</strong></td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Email</td><td style="padding:4px 0;text-align:right;">${escapeHtml(order.user.email)}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Telepon</td><td style="padding:4px 0;text-align:right;">${escapeHtml(order.user.phone || '-')}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Pengiriman</td><td style="padding:4px 0;text-align:right;">${escapeHtml(deliveryMethod)}${order.shippingService ? ` - ${escapeHtml(order.shippingService)}` : ''}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Alamat</td><td style="padding:4px 0;text-align:right;">${escapeHtml(order.shippingAddress)}</td></tr>
+      </table>
+      <table style="width:100%;max-width:640px;border-collapse:collapse;margin-bottom:16px;">
+        <thead>
+          <tr>
+            <th style="padding:8px 0;border-bottom:1px solid #d1d5db;text-align:left;">Produk</th>
+            <th style="padding:8px 0;border-bottom:1px solid #d1d5db;text-align:center;">Qty</th>
+            <th style="padding:8px 0;border-bottom:1px solid #d1d5db;text-align:right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${htmlItems}</tbody>
+      </table>
+      <table style="width:100%;max-width:640px;border-collapse:collapse;margin-bottom:20px;">
+        <tr><td style="padding:4px 0;color:#6b7280;">Subtotal</td><td style="padding:4px 0;text-align:right;">${escapeHtml(formatRupiah(subtotalAmount))}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Ongkir</td><td style="padding:4px 0;text-align:right;">${escapeHtml(formatRupiah(shippingFee))}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Diskon</td><td style="padding:4px 0;text-align:right;">${escapeHtml(formatRupiah(voucherAmount))}</td></tr>
+        <tr><td style="padding:8px 0;border-top:1px solid #d1d5db;font-weight:bold;">Total</td><td style="padding:8px 0;border-top:1px solid #d1d5db;text-align:right;font-weight:bold;">${escapeHtml(formatRupiah(grandTotalAmount))}</td></tr>
+      </table>
+      <a href="${escapeHtml(adminOrderUrl)}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:6px;">Lihat Detail Pesanan</a>
+    </div>
+  `;
+
+  await sendEmail({
+    to: env.ADMIN_ORDER_NOTIFICATION_EMAIL,
+    subject: `Pesanan baru ${order.id}`,
+    html,
+    text,
+  });
+}
+
+export async function sendNewOrderCustomerNotification(order: Prisma.OrderGetPayload<{ include: typeof orderInclude }>) {
+  const subtotalAmount = order.items.reduce((sum, item) => sum + toMoney(item.subtotal), 0);
+  const shippingFee = toMoney(order.shippingCost);
+  const voucherAmount = toMoney(order.discountAmount);
+  const grandTotalAmount = toMoney(order.grandTotal);
+  const deliveryMethod = order.shippingCourier === 'SELFPICKUP' ? 'Self Pickup' : order.shippingCourier || 'Ekspedisi';
+  const customerOrderUrl = `${env.FRONTEND_URL}/orders/${encodeURIComponent(order.id)}`;
+  const itemLines = order.items.map((item) => {
+    const line = `${item.productName} x${item.quantity} - ${formatRupiah(toMoney(item.subtotal))}`;
+    return `- ${line}`;
+  });
+  const htmlItems = order.items
+    .map((item) => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;">${escapeHtml(item.productName)}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:center;">${item.quantity}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;text-align:right;">${escapeHtml(formatRupiah(toMoney(item.subtotal)))}</td>
+      </tr>
+    `)
+    .join('');
+
+  const text = [
+    `Halo ${order.user.name},`,
+    '',
+    `Terima kasih. Pesanan kamu sudah kami terima dengan nomor ${order.id}.`,
+    'Admin akan segera memproses pesanan setelah pembayaran dikonfirmasi.',
+    '',
+    `Status: ${order.status}`,
+    `Pengiriman: ${deliveryMethod}${order.shippingService ? ` - ${order.shippingService}` : ''}`,
+    `Alamat: ${order.shippingAddress}`,
+    '',
+    'Item:',
+    ...itemLines,
+    '',
+    `Subtotal: ${formatRupiah(subtotalAmount)}`,
+    `Ongkir: ${formatRupiah(shippingFee)}`,
+    `Diskon: ${formatRupiah(voucherAmount)}`,
+    `Total: ${formatRupiah(grandTotalAmount)}`,
+    '',
+    `Cek pesanan: ${customerOrderUrl}`,
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;">
+      <h2 style="margin:0 0 16px;">Pesanan kamu sudah kami terima</h2>
+      <p style="margin:0 0 8px;">Halo <strong>${escapeHtml(order.user.name)}</strong>,</p>
+      <p style="margin:0 0 16px;">Terima kasih. Pesanan kamu dengan nomor <strong>${escapeHtml(order.id)}</strong> sudah masuk dan akan segera diproses setelah pembayaran dikonfirmasi.</p>
+      <table style="width:100%;max-width:640px;border-collapse:collapse;margin-bottom:16px;">
+        <tr><td style="padding:4px 0;color:#6b7280;">Status</td><td style="padding:4px 0;text-align:right;">${escapeHtml(order.status)}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Pengiriman</td><td style="padding:4px 0;text-align:right;">${escapeHtml(deliveryMethod)}${order.shippingService ? ` - ${escapeHtml(order.shippingService)}` : ''}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Alamat</td><td style="padding:4px 0;text-align:right;">${escapeHtml(order.shippingAddress)}</td></tr>
+      </table>
+      <table style="width:100%;max-width:640px;border-collapse:collapse;margin-bottom:16px;">
+        <thead>
+          <tr>
+            <th style="padding:8px 0;border-bottom:1px solid #d1d5db;text-align:left;">Produk</th>
+            <th style="padding:8px 0;border-bottom:1px solid #d1d5db;text-align:center;">Qty</th>
+            <th style="padding:8px 0;border-bottom:1px solid #d1d5db;text-align:right;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${htmlItems}</tbody>
+      </table>
+      <table style="width:100%;max-width:640px;border-collapse:collapse;margin-bottom:20px;">
+        <tr><td style="padding:4px 0;color:#6b7280;">Subtotal</td><td style="padding:4px 0;text-align:right;">${escapeHtml(formatRupiah(subtotalAmount))}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Ongkir</td><td style="padding:4px 0;text-align:right;">${escapeHtml(formatRupiah(shippingFee))}</td></tr>
+        <tr><td style="padding:4px 0;color:#6b7280;">Diskon</td><td style="padding:4px 0;text-align:right;">${escapeHtml(formatRupiah(voucherAmount))}</td></tr>
+        <tr><td style="padding:8px 0;border-top:1px solid #d1d5db;font-weight:bold;">Total</td><td style="padding:8px 0;border-top:1px solid #d1d5db;text-align:right;font-weight:bold;">${escapeHtml(formatRupiah(grandTotalAmount))}</td></tr>
+      </table>
+      <a href="${escapeHtml(customerOrderUrl)}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:6px;">Cek Pesanan</a>
+    </div>
+  `;
+
+  await sendEmail({
+    to: order.user.email,
+    subject: `Pesanan ${order.id} sudah diterima`,
+    html,
+    text,
+  });
+}
+
 export function mapOrder(order: any) {
   const subtotalAmount = order.items.reduce((sum: number, item: any) => sum + toMoney(item.subtotal), 0);
   const shippingFee = toMoney(order.shippingCost);
@@ -78,6 +259,7 @@ export function mapOrder(order: any) {
     lineItems: order.items.map((item: any) => ({
       id: item.id,
       productName: item.productName,
+      productImage: item.productImage || null,
       quantity: item.quantity,
       unitPrice: toMoney(item.priceAtPurchase),
       totalPrice: toMoney(item.subtotal),
@@ -139,6 +321,22 @@ export async function getOrderById(id: string) {
   return mapOrder(order);
 }
 
+export async function getOrdersByUserId(userId: string) {
+  const orders = await prisma.order.findMany({
+    where: { userId },
+    include: orderInclude,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return orders.map(mapOrder);
+}
+
+export async function getOrderByIdForUser(id: string, userId: string) {
+  const order = await prisma.order.findFirst({ where: { id, userId }, include: orderInclude });
+  if (!order) throw new NotFoundError('Pesanan');
+  return mapOrder(order);
+}
+
 export async function createOrder(input: CreateOrderInput) {
   const user = await prisma.user.findUnique({ where: { email: input.email.trim().toLowerCase() } });
   if (!user) throw new BadRequestError('Data customer belum tersimpan. Ulangi dari halaman checkout.');
@@ -186,7 +384,28 @@ export async function createOrder(input: CreateOrderInput) {
     include: orderInclude,
   });
 
-  return mapOrder(order);
+  const mappedOrder = mapOrder(order);
+
+  try {
+    await sendNewOrderAdminNotification(order);
+  } catch (error) {
+    logger.error('Failed to send admin new order notification', {
+      orderId: order.id,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+
+  try {
+    await sendNewOrderCustomerNotification(order);
+  } catch (error) {
+    logger.error('Failed to send customer new order notification', {
+      orderId: order.id,
+      customerEmail: order.user.email,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+
+  return mappedOrder;
 }
 
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput) {
@@ -213,6 +432,14 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   return mapOrder(order);
 }
 
-export async function markOrderPaid(id: string) {
+export async function markOrderPaid(id: string, userId: string, role: Role) {
+  const existing = await prisma.order.findUnique({ where: { id } });
+  if (!existing) throw new NotFoundError('Pesanan');
+
+  const canUpdate = existing.userId === userId || role === Role.ADMIN || role === Role.SUPER_ADMIN;
+  if (!canUpdate) {
+    throw new ForbiddenError('Anda tidak memiliki akses ke pesanan ini');
+  }
+
   return updateOrderStatus(id, { status: OrderStatus.PAID });
 }

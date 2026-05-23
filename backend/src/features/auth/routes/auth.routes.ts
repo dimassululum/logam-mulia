@@ -5,6 +5,8 @@ import { validate } from '../../../core/middlewares/validate.middleware';
 import {
   registerSchema,
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   refreshTokenSchema,
 } from '../schema/auth.schema';
 
@@ -15,6 +17,12 @@ router.post('/register', validate(registerSchema), authController.register);
 
 // POST /api/auth/login
 router.post('/login', validate(loginSchema), authController.login);
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', validate(forgotPasswordSchema), authController.forgotPassword);
+
+// POST /api/auth/reset-password
+router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
 
 // POST /api/auth/refresh-token
 router.post('/refresh-token', validate(refreshTokenSchema), authController.refreshToken);

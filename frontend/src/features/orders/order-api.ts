@@ -80,14 +80,20 @@ export async function createCustomerOrder(input: CreateOrderInput) {
 }
 
 export async function markCurrentOrderPaid(orderId: string) {
-  const response = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}/mark-paid`, {
-    method: 'POST',
-  })
-  const json = await response.json()
-  if (!response.ok) throw new Error(json.message || 'Gagal mengonfirmasi pembayaran')
-  const order = json.data as AdminOrderDetailRecord
+  const response = await apiClient.post<{ data: AdminOrderDetailRecord }>(`/orders/${encodeURIComponent(orderId)}/mark-paid`)
+  const order = response.data.data
   saveCurrentOrder(order)
   return order
+}
+
+export async function fetchCustomerOrders() {
+  const response = await apiClient.get<{ data: AdminOrderRecord[] }>('/orders/my')
+  return response.data.data
+}
+
+export async function fetchCustomerOrder(id: string) {
+  const response = await apiClient.get<{ data: AdminOrderDetailRecord }>(`/orders/my/${encodeURIComponent(id)}`)
+  return response.data.data
 }
 
 export async function fetchAdminOrders() {

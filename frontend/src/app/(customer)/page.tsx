@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import Footer from '@/shared/layout/Footer'
-import Button from '@/shared/ui/Button'
 import BannerSlider from '@/features/home/BannerSlider'
 import { getHomeData, type HomeMetalPrices, type HomeProduct } from '@/features/home/home-api'
 import {
@@ -40,6 +39,9 @@ const features = [
     desc:  'Fasilitas pengambilan di butik resmi.',
   },
 ]
+
+const HERO_BACKGROUND_IMAGE =
+  'https://images.pexels.com/photos/321452/pexels-photo-321452.jpeg?auto=compress&cs=tinysrgb&w=1800'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', {
@@ -202,105 +204,142 @@ export default async function HomePage() {
 
   return (
     <>
-      <section className="bg-navy-900 flex h-[calc(100svh-4rem)] max-h-[820px] min-h-[560px] flex-col items-center border-b border-gold-500/20 md:h-auto md:max-h-none md:min-h-0 md:pb-12">
-        <div className="relative w-full min-h-0 flex-1 overflow-hidden bg-navy-950 md:aspect-[16/9] md:flex-none">
+      <section className="overflow-hidden border-b border-gold-500/20 bg-navy-900">
+        <div className="relative min-h-[calc(100svh-4rem)] overflow-hidden md:hidden">
           {homeData.hero.status === 'active' ? (
             <video
               autoPlay
               loop
               muted
               playsInline
-              className="absolute inset-0 h-[108%] w-full object-cover object-top md:h-full md:object-center"
+              className="absolute inset-0 h-full w-full object-cover object-center"
             >
               <source src={homeData.hero.videoUrl} type="video/mp4" />
             </video>
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(212,175,55,0.25),transparent_38%),linear-gradient(135deg,#061228,#152b4b)]" />
           )}
+          <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-navy-950/85 via-navy-950/25 to-transparent" aria-hidden="true" />
+          <div className="absolute inset-x-5 bottom-6">
+            <Link href="/products" className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-gold-400 to-gold-500 px-6 py-4 text-base font-bold text-navy-900 shadow-[0_0_20px_rgba(212,175,55,0.4)] transition-all active:scale-95">
+              {homeData.hero.buttonTitle}
+              <ChevronRight className="h-5 w-5" />
+            </Link>
+          </div>
         </div>
 
-        <div className="container-main z-10 flex shrink-0 justify-center py-6 md:mt-8 md:py-0">
-          <Link href="/products" className="inline-block w-full sm:w-auto">
-            <Button size="lg" className="w-full sm:w-auto min-w-[240px] bg-gradient-to-r from-gold-400 to-gold-500 text-navy-900 shadow-[0_0_20px_rgba(212,175,55,0.4)] hover:-translate-y-1 hover:scale-[1.02] hover:shadow-[0_14px_34px_rgba(212,175,55,0.42)] active:translate-y-0 active:scale-95 border-none text-base font-bold py-4 px-10 transition-all [transition-duration:var(--transition-base)]">
-              {homeData.hero.buttonTitle}
-            </Button>
-          </Link>
+        <div className="relative isolate hidden overflow-hidden md:block">
+          <img
+            src={HERO_BACKGROUND_IMAGE}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 -z-30 h-full w-full object-cover object-center opacity-55"
+          />
+          <div className="absolute inset-0 -z-20 bg-navy-950/72" aria-hidden="true" />
+          <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(15,27,45,0.98)_0%,rgba(15,27,45,0.88)_44%,rgba(15,27,45,0.46)_100%)]" aria-hidden="true" />
+          <div className="absolute inset-x-0 bottom-0 -z-10 h-32 bg-gradient-to-t from-navy-950/80 to-transparent" aria-hidden="true" />
+
+          <div className="container-main relative z-10 flex min-h-[560px] items-center py-24 pb-32 md:max-w-6xl">
+            <div className="max-w-2xl">
+              <p className="mb-4 text-sm font-bold uppercase tracking-[0.18em] text-gold-400">Logam Mulia Bersertifikat</p>
+              <h1 className="max-w-xl font-heading text-[52px] font-bold leading-[1.1] text-white">
+                Investasi Emas Mulai dari <span className="text-gold-400">0.5 Gram</span>
+              </h1>
+              <p className="mt-5 max-w-md text-base leading-7 text-navy-200">
+                Aman, terpercaya, dan bersertifikat ANTAM. Mulai perjalanan investasi finansial kamu hari ini.
+              </p>
+              <Link href="/products" className="mt-8 inline-flex items-center gap-2 rounded-lg bg-gold-500 px-7 py-4 text-base font-bold text-navy-950 shadow-[0_16px_34px_-22px_rgba(212,168,75,0.75)] transition-all hover:-translate-y-0.5 hover:bg-gold-400">
+                {homeData.hero.buttonTitle}
+                <ChevronRight className="h-5 w-5" />
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section id="harga-logam" className="container-main mt-12 relative z-10">
-        <div className="rounded-lg border border-outline-variant bg-white p-4 shadow-elevation-mid sm:p-5">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase text-gold-600">Harga Logam Hari Ini</p>
-              <h2 className="mt-1 text-[26px] font-bold leading-tight text-navy-900 sm:text-[32px]">Emas dan Perak</h2>
+      <section id="harga-logam" className="container-main relative z-10 mt-8 md:-mt-16 md:mb-10">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-[0_18px_45px_-34px_rgba(15,27,45,0.5)]">
+            <div className="flex items-center justify-between gap-4 border-b border-navy-100 px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-gold-600">Harga Logam Mulia</p>
+                <h2 className="mt-1 font-body text-xl font-bold text-navy-900">Emas dan Perak Hari Ini</h2>
+              </div>
+              <svg className="h-5 w-5 shrink-0 text-navy-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+
+            <div className="flex flex-1 flex-col p-5 sm:p-6">
+              <div className="grid gap-3">
+                {priceCards.map((card) => (
+                  <div
+                    key={card.label}
+                    className={`relative overflow-hidden rounded-lg border p-5 shadow-sm ${
+                      card.tone === 'gold'
+                        ? 'border-gold-400/60 bg-[linear-gradient(135deg,#fff7db_0%,#f3c85f_42%,#8b650f_120%)]'
+                        : 'border-slate-300 bg-[linear-gradient(135deg,#ffffff_0%,#dce1e8_48%,#748091_120%)]'
+                    }`}
+                  >
+                    <img
+                      src={card.backgroundImage}
+                      alt=""
+                      aria-hidden="true"
+                      className={`pointer-events-none absolute right-0 top-1/2 h-[130%] max-w-none -translate-y-1/2 object-contain opacity-20 ${
+                        card.tone === 'gold' ? 'w-[58%] rotate-6' : 'w-[48%]'
+                      }`}
+                    />
+                    <div className="absolute inset-0 bg-white/10" aria-hidden="true" />
+                    <div className="relative">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className={`text-sm font-bold ${card.tone === 'gold' ? 'text-gold-800' : 'text-navy-700'}`}>
+                            {card.label}
+                          </p>
+                          <p className="mt-3 text-xs font-bold uppercase text-navy-600">Harga hari ini</p>
+                          <h3 className="mt-1 font-body text-[28px] font-bold leading-none text-navy-900">
+                            {card.price}
+                          </h3>
+                        </div>
+
+                        <span
+                          className={`inline-flex min-w-[76px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-bold ${
+                            card.trend === 'up'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : card.trend === 'down'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-white text-navy-600 ring-1 ring-navy-200'
+                          }`}
+                        >
+                          {card.changeLabel}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 rounded-lg bg-white/80 p-3 ring-1 ring-black/5 backdrop-blur-sm">
+                        <p className="text-xs font-bold uppercase text-navy-500">Harga kemarin</p>
+                        <p className="mt-1 text-base font-bold text-navy-900">{card.previousPrice}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-auto flex flex-col gap-4 border-t border-navy-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-semibold leading-5 text-navy-500">
+                  {formatMetalUpdateTime(homeData.metalPrices, homeData.products)}
+                </p>
+                <Link href="/products" className="inline-flex items-center justify-center gap-1 rounded-lg border border-gold-300 px-4 py-2 text-sm font-bold text-gold-700 hover:bg-gold-50">
+                  Lihat Produk
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              </div>
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            {priceCards.map((card) => (
-              <div
-                key={card.label}
-                className={`relative overflow-hidden rounded-lg border p-5 shadow-sm ${
-                  card.tone === 'gold'
-                    ? 'border-gold-400/60 bg-[linear-gradient(135deg,#fff7db_0%,#f3c85f_42%,#8b650f_120%)]'
-                    : 'border-slate-300 bg-[linear-gradient(135deg,#ffffff_0%,#dce1e8_48%,#748091_120%)]'
-                }`}
-              >
-                <img
-                  src={card.backgroundImage}
-                  alt=""
-                  aria-hidden="true"
-                  className={`pointer-events-none absolute right-0 top-1/2 h-[130%] max-w-none -translate-y-1/2 object-contain opacity-20 ${
-                    card.tone === 'gold' ? 'w-[58%] rotate-6' : 'w-[48%]'
-                  }`}
-                />
-                <div className="absolute inset-0 bg-white/10" aria-hidden="true" />
-                <div className="relative">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className={`text-sm font-bold ${card.tone === 'gold' ? 'text-gold-800' : 'text-navy-700'}`}>
-                      {card.label}
-                    </p>
-                    <p className="mt-4 text-xs font-bold uppercase text-navy-600">Harga hari ini</p>
-                    <h3 className="mt-1 font-body text-[30px] font-bold leading-none text-navy-900 sm:text-[34px]">
-                      {card.price}
-                    </h3>
-                  </div>
-
-                  <span
-                    className={`inline-flex min-w-[82px] items-center justify-center rounded-full px-3 py-1.5 text-sm font-bold ${
-                      card.trend === 'up'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : card.trend === 'down'
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-white text-navy-600 ring-1 ring-navy-200'
-                    }`}
-                  >
-                    {card.changeLabel}
-                  </span>
-                </div>
-
-                <div className="mt-5 rounded-lg bg-white/80 p-4 ring-1 ring-black/5 backdrop-blur-sm">
-                  <p className="text-xs font-bold uppercase text-navy-500">Harga kemarin</p>
-                  <p className="mt-1 text-lg font-bold text-navy-900">{card.previousPrice}</p>
-                </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 flex items-center gap-2 border-t border-navy-100 pt-4 text-xs font-semibold text-navy-500">
-            <svg className="h-4 w-4 text-gold-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {formatMetalUpdateTime(homeData.metalPrices, homeData.products)}
+          <div className="overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-[0_18px_45px_-34px_rgba(15,27,45,0.5)]">
+            <BannerSlider banners={homeData.banners} />
           </div>
         </div>
-      </section>
-
-      <section className="container-main mt-8 mb-8 relative z-10">
-        <BannerSlider banners={homeData.banners} />
       </section>
 
       <section className="section-full">

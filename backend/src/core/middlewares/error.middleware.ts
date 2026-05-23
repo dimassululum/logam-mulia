@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { ZodError } from 'zod';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -30,6 +31,18 @@ export function errorHandler(
     res.status(err.statusCode).json({
       success: false,
       message: err.message,
+    });
+    return;
+  }
+
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? `Ukuran file terlalu besar. Maksimal ${env.MAX_FILE_SIZE_MB}MB.`
+      : 'Upload file gagal. Periksa file yang diunggah.';
+
+    res.status(413).json({
+      success: false,
+      message,
     });
     return;
   }

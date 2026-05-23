@@ -1,15 +1,21 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { prisma } from '../../../core/config/database';
+import { env } from '../../../core/config/env';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../../core/utils/jwt';
+import { sendEmail } from '../../../core/utils/email';
 import {
+  BadRequestError,
   ConflictError,
   UnauthorizedError,
   NotFoundError,
   ForbiddenError,
 } from '../../../core/utils/errors';
-import type { RegisterInput, LoginInput } from '../schema/auth.schema';
+import type { RegisterInput, LoginInput, ForgotPasswordInput, ResetPasswordInput } from '../schema/auth.schema';
 
 const SALT_ROUNDS = 12;
+const RESET_PASSWORD_TOKEN_BYTES = 32;
+const RESET_PASSWORD_EXPIRES_MINUTES = 30;
 
 export interface AuthTokens {
   accessToken: string;
@@ -93,6 +99,76 @@ export async function login(input: LoginInput): Promise<AuthResponse> {
   };
 }
 
+// ─── Forgot Password ──────────────────────────────────────────────────────
+export async function forgotPassword(input: ForgotPasswordInput): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { email: input.email } });
+
+  if (!user || !user.isActive) {
+    return;
+  }
+
+  const token = crypto.randomBytes(RESET_PASSWORD_TOKEN_BYTES).toString('hex');
+  const tokenHash = hashResetToken(token);
+  const expiresAt = new Date(Date.now() + RESET_PASSWORD_EXPIRES_MINUTES * 60 * 1000);
+  const resetLink = `${env.FRONTEND_URL}/reset-password?token=${encodeURIComponent(token)}`;
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: expiresAt,
+    },
+  });
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Reset Password Logam Mulia Antam',
+    text: [
+      `Halo ${user.name},`,
+      '',
+      'Kami menerima permintaan reset password untuk akun Logam Mulia Antam Anda.',
+      `Buka link berikut untuk membuat password baru: ${resetLink}`,
+      '',
+      `Link ini berlaku selama ${RESET_PASSWORD_EXPIRES_MINUTES} menit.`,
+      'Abaikan email ini jika Anda tidak meminta reset password.',
+    ].join('\n'),
+    html: `
+      <p>Halo ${user.name},</p>
+      <p>Kami menerima permintaan reset password untuk akun Logam Mulia Antam Anda.</p>
+      <p><a href="${resetLink}">Klik di sini untuk membuat password baru</a>.</p>
+      <p>Link ini berlaku selama ${RESET_PASSWORD_EXPIRES_MINUTES} menit.</p>
+      <p>Abaikan email ini jika Anda tidak meminta reset password.</p>
+    `,
+  });
+}
+
+// ─── Reset Password ───────────────────────────────────────────────────────
+export async function resetPassword(input: ResetPasswordInput): Promise<void> {
+  const tokenHash = hashResetToken(input.token);
+  const user = await prisma.user.findFirst({
+    where: {
+      passwordResetTokenHash: tokenHash,
+      passwordResetExpiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!user) {
+    throw new BadRequestError('Link reset password tidak valid atau sudah kedaluwarsa');
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      refreshToken: null,
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
+    },
+  });
+}
+
 // ─── Refresh Token ─────────────────────────────────────────────────────────
 export async function refreshToken(token: string): Promise<{ accessToken: string }> {
   let payload: { userId: string };
@@ -156,4 +232,8 @@ function generateTokens(userId: string, role: string): AuthTokens {
     accessToken: signAccessToken({ userId, role }),
     refreshToken: signRefreshToken({ userId }),
   };
+}
+
+function hashResetToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }

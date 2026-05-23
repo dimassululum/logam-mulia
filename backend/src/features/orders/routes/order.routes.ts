@@ -5,7 +5,9 @@ import { authenticate, isAdmin } from '../../../core/middlewares/auth.middleware
 const router = Router();
 
 router.post('/', orderController.createOrder);
-router.post('/:id/mark-paid', orderController.markOrderPaid);
+router.get('/my', authenticate, orderController.getMyOrders);
+router.get('/my/:id', authenticate, orderController.getMyOrder);
+router.post('/:id/mark-paid', authenticate, orderController.markOrderPaid);
 
 router.get('/', authenticate, isAdmin, orderController.getAllOrders);
 router.get('/:id', authenticate, isAdmin, orderController.getOrder);

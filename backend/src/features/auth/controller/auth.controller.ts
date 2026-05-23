@@ -21,6 +21,22 @@ export async function login(req: Request, res: Response): Promise<void> {
   });
 }
 
+export async function forgotPassword(req: Request, res: Response): Promise<void> {
+  await authService.forgotPassword(req.body);
+  sendSuccess({
+    res,
+    message: 'Jika email terdaftar, link reset password akan dikirim ke email tersebut.',
+  });
+}
+
+export async function resetPassword(req: Request, res: Response): Promise<void> {
+  await authService.resetPassword(req.body);
+  sendSuccess({
+    res,
+    message: 'Password berhasil direset. Silakan login dengan password baru.',
+  });
+}
+
 export async function refreshToken(req: Request, res: Response): Promise<void> {
   const { refreshToken } = req.body;
   const result = await authService.refreshToken(refreshToken);

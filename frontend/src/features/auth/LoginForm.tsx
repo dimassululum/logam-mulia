@@ -1,10 +1,13 @@
 'use client'
 
+import { useState } from 'react'
+import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Input from '@/shared/ui/Input'
 import Button from '@/shared/ui/Button'
+import PasswordVisibilityButton from './PasswordVisibilityButton'
 
 const loginSchema = z.object({
   email:    z.string().email('Format email tidak valid'),
@@ -19,6 +22,7 @@ interface LoginFormProps {
 }
 
 export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
+  const [showPassword, setShowPassword] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
   })
@@ -48,7 +52,7 @@ export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
       <Input
         id="login-password"
         label="Password"
-        type="password"
+        type={showPassword ? 'text' : 'password'}
         placeholder="Minimal 6 karakter"
         required
         error={errors.password?.message}
@@ -58,6 +62,12 @@ export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
               d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
         }
+        rightIcon={
+          <PasswordVisibilityButton
+            isVisible={showPassword}
+            onToggle={() => setShowPassword((value) => !value)}
+          />
+        }
         {...register('password')}
       />
 
@@ -66,9 +76,9 @@ export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
           <input type="checkbox" id="remember-me" className="w-4 h-4 accent-gold-500 rounded" />
           <span className="text-sm text-navy-600">Ingat saya</span>
         </label>
-        <a href="#" className="text-sm text-gold-600 hover:text-gold-500 transition-colors">
+        <Link href="/reset-password" className="text-sm text-gold-600 hover:text-gold-500 transition-colors">
           Lupa password?
-        </a>
+        </Link>
       </div>
 
       <Button type="submit" fullWidth size="lg" isLoading={isLoading} id="login-submit-btn">

@@ -61,6 +61,7 @@ export interface AdminOrderRecord {
 export interface AdminOrderLineItem {
   id: string
   productName: string
+  productImage?: string | null
   quantity: number
   unitPrice: number
   totalPrice: number

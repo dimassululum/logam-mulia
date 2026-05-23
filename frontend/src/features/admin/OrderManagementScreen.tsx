@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight, HelpCircle } from 'lucide-react'
+import { ArrowUpRight, HelpCircle, MessageCircle } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
 import {
@@ -36,6 +36,13 @@ const STATUS_GUIDE: { status: OrderStatus; description: string }[] = [
   { status: 'refund', description: 'Admin memilih mengembalikan biaya.' },
   { status: 'selesai', description: 'Pesanan berhasil dikirim dengan ekspedisi atau diberikan di butik yang dipilih.' },
 ]
+
+function buildWhatsappUrl(phone: string) {
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return null
+  const normalized = digits.startsWith('0') ? `62${digits.slice(1)}` : digits.startsWith('8') ? `62${digits}` : digits
+  return `https://wa.me/${normalized}`
+}
 
 export default function OrderManagementScreen() {
   const [orders, setOrders] = useState<AdminOrderRecord[]>([])
@@ -137,55 +144,43 @@ export default function OrderManagementScreen() {
     { id: 'actions', label: 'Aksi', className: 'w-[15%]' },
   ]
 
-  const rows: AdminTableRow[] = filteredOrders.map((order) => ({
-    id: order.id,
-    cells: [
-      <div key={`${order.id}-order`}>
-        <p className="font-semibold text-navy-900">{order.id}</p>
-        <p className="mt-1 text-xs text-navy-500">{order.customerPhone}</p>
-      </div>,
-      <div key={`${order.id}-customer`}>
-        <p className="font-medium text-navy-900">{order.customerName}</p>
-        <p className="mt-1 text-xs text-navy-500">{order.customerEmail}</p>
-      </div>,
-      <div key={`${order.id}-item`}>
-        <p className="font-medium text-navy-900">{order.primaryItem}</p>
-        <p className="mt-1 text-xs text-navy-500">{order.itemCount} item</p>
-      </div>,
-      <span key={`${order.id}-total`} className="font-semibold text-navy-900">{formatRupiah(order.totalAmount)}</span>,
-      <div key={`${order.id}-shipping`}>
-        <p className="font-medium text-navy-900">{order.shippingMethod}</p>
-        <p className="mt-1 text-xs text-navy-500">{order.trackingNumber || '-'}</p>
-      </div>,
-      <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
-      <div key={`${order.id}-actions`} className="flex items-center gap-2">
-        <Link
-          href={`/admin/orders/${order.id}`}
-          aria-label={`Detail ${order.id}`}
-          title={`Detail ${order.id}`}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-navy-200 text-navy-700 transition-colors hover:bg-navy-50"
-        >
-          <ArrowUpRight className="h-4 w-4" />
-        </Link>
-        <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} />
-      </div>,
-    ],
-    mobileTitle: order.id,
-    mobileSubtitle: order.customerName,
-    mobileAside: <Badge variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
-    mobileMeta: (
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-navy-400">Total</p>
-            <p className="mt-1 font-semibold text-navy-900">{formatRupiah(order.totalAmount)}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-navy-400">Pengiriman</p>
-            <p className="mt-1 font-medium text-navy-700">{order.shippingMethod}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+  const rows: AdminTableRow[] = filteredOrders.map((order) => {
+    const whatsappUrl = buildWhatsappUrl(order.customerPhone)
+
+    return {
+      id: order.id,
+      cells: [
+        <div key={`${order.id}-order`}>
+          <p className="font-semibold text-navy-900">{order.id}</p>
+          <p className="mt-1 text-xs text-navy-500">{order.customerPhone}</p>
+        </div>,
+        <div key={`${order.id}-customer`}>
+          <p className="font-medium text-navy-900">{order.customerName}</p>
+          <p className="mt-1 text-xs text-navy-500">{order.customerEmail}</p>
+        </div>,
+        <div key={`${order.id}-item`}>
+          <p className="font-medium text-navy-900">{order.primaryItem}</p>
+          <p className="mt-1 text-xs text-navy-500">{order.itemCount} item</p>
+        </div>,
+        <span key={`${order.id}-total`} className="font-semibold text-navy-900">{formatRupiah(order.totalAmount)}</span>,
+        <div key={`${order.id}-shipping`}>
+          <p className="font-medium text-navy-900">{order.shippingMethod}</p>
+          <p className="mt-1 text-xs text-navy-500">{order.trackingNumber || '-'}</p>
+        </div>,
+        <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
+        <div key={`${order.id}-actions`} className="flex items-center gap-2">
+          {whatsappUrl ? (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`WhatsApp ${order.customerName}`}
+              title={`WhatsApp ${order.customerName}`}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-600 transition-colors hover:bg-emerald-50"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </a>
+          ) : null}
           <Link
             href={`/admin/orders/${order.id}`}
             aria-label={`Detail ${order.id}`}
@@ -195,10 +190,50 @@ export default function OrderManagementScreen() {
             <ArrowUpRight className="h-4 w-4" />
           </Link>
           <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} />
+        </div>,
+      ],
+      mobileTitle: order.id,
+      mobileSubtitle: order.customerName,
+      mobileAside: <Badge variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
+      mobileMeta: (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-navy-400">Total</p>
+              <p className="mt-1 font-semibold text-navy-900">{formatRupiah(order.totalAmount)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-navy-400">Pengiriman</p>
+              <p className="mt-1 font-medium text-navy-700">{order.shippingMethod}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {whatsappUrl ? (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`WhatsApp ${order.customerName}`}
+                title={`WhatsApp ${order.customerName}`}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-600 transition-colors hover:bg-emerald-50"
+              >
+                <MessageCircle className="h-4 w-4" />
+              </a>
+            ) : null}
+            <Link
+              href={`/admin/orders/${order.id}`}
+              aria-label={`Detail ${order.id}`}
+              title={`Detail ${order.id}`}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-navy-200 text-navy-700 transition-colors hover:bg-navy-50"
+            >
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+            <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} />
+          </div>
         </div>
-      </div>
-    ),
-  }))
+      ),
+    }
+  })
 
   return (
     <div className="space-y-4">
