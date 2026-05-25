@@ -636,8 +636,6 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
     include: orderInclude,
   });
 
-  queuePaymentProofNotifications(order);
-
   return mapOrder(order);
 }
 
@@ -669,6 +667,8 @@ export async function uploadPaymentProof(id: string, userId: string, file: Expre
     },
     include: orderInclude,
   });
+
+  queuePaymentProofNotifications(order);
 
   return mapOrder(order);
 }

@@ -76,13 +76,13 @@ async function sendWithSmtp(input: SendEmailInput) {
 }
 
 export async function sendEmail(input: SendEmailInput) {
-  if (env.SMTP_HOST) {
-    await sendWithSmtp(input);
+  if (env.RESEND_API_KEY) {
+    await sendWithResend(input);
     return true;
   }
 
-  if (env.RESEND_API_KEY) {
-    await sendWithResend(input);
+  if (env.SMTP_HOST) {
+    await sendWithSmtp(input);
     return true;
   }
 
