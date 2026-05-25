@@ -17,10 +17,12 @@ export const checkoutCustomerBodySchema = z.object({
   village: z.string().optional(),
   province: z.string().optional(),
   postalCode: z.string().optional(),
+  rajaOngkirDestinationId: z.coerce.number().int().positive('Destination ID RajaOngkir tidak valid').optional(),
 });
 
 export const shippingRatesSchema = z.object({
   destinationCity: z.string().min(1, 'Kota tujuan wajib diisi'),
+  destinationId: z.coerce.number().int().positive('Destination ID RajaOngkir tidak valid').optional(),
   destinationDistrict: z.string().optional(),
   destinationVillage: z.string().optional(),
   destinationPostalCode: z.string().optional(),

@@ -62,8 +62,8 @@ export default function AdminDashboardScreen() {
 
     async function loadOrders() {
       try {
-        const data = await fetchAdminOrders()
-        if (alive) setOrders(data)
+        const result = await fetchAdminOrders({ limit: 100 })
+        if (alive) setOrders(result.data)
       } catch {
         if (alive) setError('Gagal memuat data dashboard dari backend.')
       } finally {

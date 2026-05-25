@@ -13,7 +13,7 @@ export const createOrderSchema = z.object({
   email: z.string().email(),
   customerName: z.string().min(2),
   customerPhone: z.string().optional(),
-  paymentMethod: z.string().min(1).default('Virtual Account'),
+  paymentMethod: z.string().min(1).default('QRIS Manual'),
   deliveryType: z.enum(['ekspedisi', 'butik']),
   shippingCourier: z.string().nullable().optional(),
   shippingService: z.string().nullable().optional(),

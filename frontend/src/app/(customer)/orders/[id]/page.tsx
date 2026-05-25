@@ -21,7 +21,7 @@ import Badge from '@/shared/ui/Badge'
 import Button from '@/shared/ui/Button'
 import Card from '@/shared/ui/Card'
 import OrderWhatsappButton from '@/features/orders/OrderWhatsappButton'
-import type { AdminOrderDetailRecord } from '@/features/admin/admin-management-data'
+import { getOrderBadgeVariant, type AdminOrderDetailRecord } from '@/features/admin/admin-management-data'
 import { fetchCustomerOrder } from '@/features/orders/order-api'
 
 function formatOrderDate(value: string) {
@@ -45,6 +45,15 @@ function joinRegion(order: AdminOrderDetailRecord) {
     order.recipientDetail.city,
     order.recipientDetail.province,
   ].filter(Boolean).join(', ') || '-'
+}
+
+function getPaymentStatusLabel(order: AdminOrderDetailRecord) {
+  if (order.status === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
+  if (order.status === 'pending') return 'Menunggu Pembayaran'
+  if (order.status === 'success') return 'Sudah Dibayar'
+  if (order.status === 'selesai') return 'Selesai'
+  if (order.status === 'canceled') return 'Dibatalkan'
+  return String(order.status)
 }
 
 function SectionCard({
@@ -226,6 +235,8 @@ export default function OrderDetailPage() {
               <SectionCard title="Detail Pembayaran" icon={<CreditCard className="h-5 w-5" />}>
                 <div className="space-y-3">
                   <MetaRow label="Metode" value={order.paymentMethod} strong />
+                  <MetaRow label="Status" value={<Badge variant={getOrderBadgeVariant(order.status)} label={getPaymentStatusLabel(order)} />} />
+                  <MetaRow label="Bukti Diupload" value={order.paymentProofUploadedAt ? formatOrderDate(order.paymentProofUploadedAt) : '-'} />
                   <MetaRow label="Dibuat" value={formatOrderDate(order.createdAt)} />
                   <MetaRow label="Update Terakhir" value={formatOrderDate(order.updatedAt)} />
                 </div>

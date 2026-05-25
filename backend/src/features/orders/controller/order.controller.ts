@@ -1,11 +1,26 @@
 import { Request, Response } from 'express';
 import * as orderService from '../service/order.service';
 import { createOrderSchema, updateOrderStatusSchema } from '../schema/order.schema';
-import { sendSuccess } from '../../../core/utils/response';
+import { paginate, parsePagination, sendSuccess } from '../../../core/utils/response';
 
-export async function getAllOrders(_req: Request, res: Response) {
-  const orders = await orderService.getAllOrders();
-  sendSuccess({ res, data: orders });
+function getQueryString(value: unknown) {
+  return typeof value === 'string' ? value : undefined;
+}
+
+export async function getAllOrders(req: Request, res: Response) {
+  const { page, limit, skip } = parsePagination({
+    page: getQueryString(req.query.page),
+    limit: getQueryString(req.query.limit),
+  });
+  const result = await orderService.getAllOrders({
+    page,
+    limit,
+    skip,
+    search: getQueryString(req.query.search),
+    status: getQueryString(req.query.status),
+    shipping: getQueryString(req.query.shipping),
+  });
+  sendSuccess({ res, data: result.orders, meta: paginate(result.total, page, limit) });
 }
 
 export async function getOrder(req: Request, res: Response) {
@@ -35,7 +50,12 @@ export async function updateOrderStatus(req: Request, res: Response) {
   sendSuccess({ res, message: 'Status pesanan berhasil diperbarui', data: order });
 }
 
-export async function markOrderPaid(req: Request, res: Response) {
-  const order = await orderService.markOrderPaid(req.params.id, req.user!.userId, req.user!.role);
+export async function uploadPaymentProof(req: Request, res: Response) {
+  const order = await orderService.uploadPaymentProof(req.params.id, req.user!.userId, req.file);
+  sendSuccess({ res, message: 'Bukti pembayaran berhasil diupload', data: order });
+}
+
+export async function confirmPayment(req: Request, res: Response) {
+  const order = await orderService.confirmOrderPayment(req.params.id, req.user!.role);
   sendSuccess({ res, message: 'Pembayaran pesanan berhasil dikonfirmasi', data: order });
 }

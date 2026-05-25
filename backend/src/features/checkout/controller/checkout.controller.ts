@@ -27,6 +27,7 @@ export async function getShippingRates(req: Request, res: Response) {
   const query = shippingRatesSchema.parse(req.query);
   const rates = await checkoutService.getShippingRates({
     destinationCity: query.destinationCity,
+    destinationId: query.destinationId,
     destinationDistrict: query.destinationDistrict,
     destinationVillage: query.destinationVillage,
     destinationPostalCode: query.destinationPostalCode,

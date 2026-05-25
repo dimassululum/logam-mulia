@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowUpRight, HelpCircle, MessageCircle } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
@@ -15,6 +15,8 @@ import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admi
 import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Modal } from '@/shared/ui'
+
+const ORDER_PAGE_SIZE = 20
 
 const STATUS_FILTER_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: 'pending', label: 'Pending' },
@@ -44,6 +46,11 @@ function buildWhatsappUrl(phone: string) {
   return `https://wa.me/${normalized}`
 }
 
+function getPaymentAwareStatusLabel(order: AdminOrderRecord) {
+  if (order.status === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
+  return getOrderStatusLabel(order.status)
+}
+
 export default function OrderManagementScreen() {
   const [orders, setOrders] = useState<AdminOrderRecord[]>([])
   const [search, setSearch] = useState('')
@@ -56,6 +63,8 @@ export default function OrderManagementScreen() {
   const [activeOrder, setActiveOrder] = useState<AdminOrderRecord | null>(null)
   const [nextStatus, setNextStatus] = useState<OrderStatus>('pending')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pagination, setPagination] = useState({ total: 0, page: 1, limit: ORDER_PAGE_SIZE, totalPages: 1 })
 
   useEffect(() => {
     if (!toast) return
@@ -67,9 +76,19 @@ export default function OrderManagementScreen() {
     let alive = true
 
     async function loadOrders() {
+      setIsLoading(true)
       try {
-        const data = await fetchAdminOrders()
-        if (alive) setOrders(data)
+        const result = await fetchAdminOrders({
+          page: currentPage,
+          limit: ORDER_PAGE_SIZE,
+          search,
+          status: statusFilter,
+          shipping: shippingFilter,
+        })
+        if (alive) {
+          setOrders(result.data)
+          setPagination(result.meta)
+        }
       } catch {
         if (alive) showToast('Gagal memuat pesanan dari backend.', 'error')
       } finally {
@@ -77,33 +96,14 @@ export default function OrderManagementScreen() {
       }
     }
 
-    loadOrders()
+    const timeout = window.setTimeout(loadOrders, search.trim() ? 300 : 0)
     return () => {
       alive = false
+      window.clearTimeout(timeout)
     }
-  }, [])
+  }, [currentPage, search, shippingFilter, statusFilter])
 
   const hasActiveFilter = statusFilter !== 'all' || shippingFilter !== 'all'
-
-  const filteredOrders = useMemo(
-    () =>
-      orders.filter((order) => {
-        const keyword = search.trim().toLowerCase()
-        const matchesSearch =
-          !keyword ||
-          order.id.toLowerCase().includes(keyword) ||
-          order.customerName.toLowerCase().includes(keyword) ||
-          order.customerEmail.toLowerCase().includes(keyword)
-
-        const normalizedStatus = order.status === 'cancelled' ? 'canceled' : ['paid', 'processing', 'shipped', 'delivered'].includes(order.status) ? 'success' : order.status === 'completed' ? 'selesai' : order.status
-        const matchesStatus = statusFilter === 'all' || normalizedStatus === statusFilter
-        const matchesShipping =
-          shippingFilter === 'all' || order.shippingMethod.toLowerCase().includes(shippingFilter.toLowerCase())
-
-        return matchesSearch && matchesStatus && matchesShipping
-      }),
-    [orders, search, statusFilter, shippingFilter],
-  )
 
   function showToast(message: string, tone: ToastTone) {
     setToast({ message, tone })
@@ -115,8 +115,25 @@ export default function OrderManagementScreen() {
   }
 
   function resetFilters() {
+    setCurrentPage(1)
+    setSearch('')
     setStatusFilter('all')
     setShippingFilter('all')
+  }
+
+  function handleSearchChange(value: string) {
+    setCurrentPage(1)
+    setSearch(value)
+  }
+
+  function handleStatusFilterChange(value: string) {
+    setCurrentPage(1)
+    setStatusFilter(value)
+  }
+
+  function handleShippingFilterChange(value: string) {
+    setCurrentPage(1)
+    setShippingFilter(value)
   }
 
   async function applyStatusUpdate() {
@@ -144,7 +161,7 @@ export default function OrderManagementScreen() {
     { id: 'actions', label: 'Aksi', className: 'w-[15%]' },
   ]
 
-  const rows: AdminTableRow[] = filteredOrders.map((order) => {
+  const rows: AdminTableRow[] = orders.map((order) => {
     const whatsappUrl = buildWhatsappUrl(order.customerPhone)
 
     return {
@@ -167,7 +184,7 @@ export default function OrderManagementScreen() {
           <p className="font-medium text-navy-900">{order.shippingMethod}</p>
           <p className="mt-1 text-xs text-navy-500">{order.trackingNumber || '-'}</p>
         </div>,
-        <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
+        <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getPaymentAwareStatusLabel(order)} />,
         <div key={`${order.id}-actions`} className="flex items-center gap-2">
           {whatsappUrl ? (
             <a
@@ -194,7 +211,7 @@ export default function OrderManagementScreen() {
       ],
       mobileTitle: order.id,
       mobileSubtitle: order.customerName,
-      mobileAside: <Badge variant={getOrderBadgeVariant(order.status)} label={getOrderStatusLabel(order.status)} />,
+      mobileAside: <Badge variant={getOrderBadgeVariant(order.status)} label={getPaymentAwareStatusLabel(order)} />,
       mobileMeta: (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -252,7 +269,7 @@ export default function OrderManagementScreen() {
       <div className="space-y-4">
         <TableToolbar>
           <div className="w-full min-w-[220px] lg:w-72">
-            <FilterInput label="Cari" value={search} onChange={setSearch} placeholder="Cari order atau customer" />
+            <FilterInput label="Cari" value={search} onChange={handleSearchChange} placeholder="Cari order atau customer" />
           </div>
           <FilterToggleButton active={hasActiveFilter} onClick={() => setIsFilterOpen(true)} />
           {hasActiveFilter && (
@@ -267,12 +284,36 @@ export default function OrderManagementScreen() {
           rows={rows}
           emptyState={<AdminEmptyState title={isLoading ? 'Memuat pesanan...' : 'Pesanan tidak ditemukan'} description={isLoading ? 'Data sedang diambil dari backend.' : 'Ubah pencarian atau filter.'} />}
         />
+        <div className="flex flex-col gap-3 rounded-2xl border border-navy-100 bg-white p-4 text-sm text-navy-600 shadow-elevation-low sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Menampilkan halaman <span className="font-semibold text-navy-900">{pagination.page}</span> dari{' '}
+            <span className="font-semibold text-navy-900">{Math.max(1, pagination.totalPages)}</span> ({pagination.total} pesanan)
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={currentPage <= 1 || isLoading}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            >
+              Sebelumnya
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={currentPage >= pagination.totalPages || isLoading}
+              onClick={() => setCurrentPage((page) => Math.min(Math.max(1, pagination.totalPages), page + 1))}
+            >
+              Berikutnya
+            </Button>
+          </div>
+        </div>
       </div>
 
       <FilterModal isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Filter Pesanan">
         <div className="grid gap-4">
-          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ value: 'all', label: 'Semua status' }, ...STATUS_FILTER_OPTIONS]} />
-          <FilterSelect label="Pengiriman" value={shippingFilter} onChange={setShippingFilter} options={[{ value: 'all', label: 'Semua pengiriman' }, { value: 'JNE', label: 'JNE' }, { value: 'POS', label: 'POS' }, { value: 'TIKI', label: 'TIKI' }, { value: 'Self Pickup', label: 'Self Pickup' }]} />
+          <FilterSelect label="Status" value={statusFilter} onChange={handleStatusFilterChange} options={[{ value: 'all', label: 'Semua status' }, ...STATUS_FILTER_OPTIONS]} />
+          <FilterSelect label="Pengiriman" value={shippingFilter} onChange={handleShippingFilterChange} options={[{ value: 'all', label: 'Semua pengiriman' }, { value: 'JNE', label: 'JNE' }, { value: 'POS', label: 'POS' }, { value: 'TIKI', label: 'TIKI' }, { value: 'Self Pickup', label: 'Self Pickup' }]} />
         </div>
       </FilterModal>
 

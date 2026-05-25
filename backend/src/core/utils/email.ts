@@ -29,6 +29,9 @@ function getSmtpTransporter() {
       tls: {
         rejectUnauthorized: env.SMTP_TLS_REJECT_UNAUTHORIZED,
       },
+      connectionTimeout: env.SMTP_TIMEOUT_MS,
+      greetingTimeout: env.SMTP_TIMEOUT_MS,
+      socketTimeout: env.SMTP_TIMEOUT_MS,
     });
   }
 
@@ -73,13 +76,13 @@ async function sendWithSmtp(input: SendEmailInput) {
 }
 
 export async function sendEmail(input: SendEmailInput) {
-  if (env.RESEND_API_KEY) {
-    await sendWithResend(input);
+  if (env.SMTP_HOST) {
+    await sendWithSmtp(input);
     return true;
   }
 
-  if (env.SMTP_HOST) {
-    await sendWithSmtp(input);
+  if (env.RESEND_API_KEY) {
+    await sendWithResend(input);
     return true;
   }
 

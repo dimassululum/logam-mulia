@@ -24,6 +24,8 @@ import orderRoutes from '../features/orders/routes/order.routes';
 import metalPriceRoutes from '../features/metal-prices/routes/metal-price.routes';
 
 const app = express();
+app.set('trust proxy', 1);
+
 const allowedOrigins = [
   env.FRONTEND_URL,
   ...env.FRONTEND_URLS,

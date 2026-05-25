@@ -12,6 +12,7 @@ export interface GuestCheckoutAddress {
   village?: string
   province: string
   postalCode: string
+  rajaOngkirDestinationId?: number
 }
 
 export interface GuestCheckoutProfile {
@@ -68,6 +69,9 @@ export async function saveCheckoutCustomerProfile(profile: {
     formData.append('village', address.village || '')
     formData.append('province', address.province)
     formData.append('postalCode', address.postalCode)
+    if (address.rajaOngkirDestinationId) {
+      formData.append('rajaOngkirDestinationId', String(address.rajaOngkirDestinationId))
+    }
   }
 
   const response = await fetch(`${API_URL}/checkout/customer`, {

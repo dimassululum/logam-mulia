@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { ArrowLeft, CreditCard, ExternalLink, IdCard, Package, Store, Truck, UserRound } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CreditCard, ExternalLink, IdCard, Package, Store, Truck, UserRound } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { cn, formatRupiah } from '@/core/lib/utils'
 import { resolvePublicAssetUrl } from '@/core/lib/public-url'
@@ -11,8 +11,8 @@ import {
   getOrderBadgeVariant,
   type AdminOrderDetailRecord,
 } from '@/features/admin/admin-management-data'
-import { fetchAdminOrder } from '@/features/orders/order-api'
-import { InlineToast } from '@/features/admin/admin-ui'
+import { confirmAdminOrderPayment, fetchAdminOrder } from '@/features/orders/order-api'
+import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Badge, Button, Card, Modal } from '@/shared/ui'
 
 function normalizeOrderStatus(status: OrderStatus): OrderStatus {
@@ -32,6 +32,11 @@ function getOrderStatusHeadline(status: OrderStatus) {
     default:
       return String(status)
   }
+}
+
+function getPaymentStatusHeadline(order: AdminOrderDetailRecord) {
+  if (normalizeOrderStatus(order.status) === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
+  return getOrderStatusHeadline(order.status)
 }
 
 function getOrderStampLabel(status: OrderStatus) {
@@ -257,10 +262,40 @@ function getPublicKtpUrl(order: AdminOrderDetailRecord) {
   return `${process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:5000'}${ktpUrl}`
 }
 
+function getPublicPaymentProofUrl(order: AdminOrderDetailRecord) {
+  return resolvePublicAssetUrl(order.paymentProofUrl) || null
+}
+
 function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRecord }) {
   const [isDocumentOpen, setIsDocumentOpen] = useState(false)
-  const order = initialOrder
+  const [isPaymentProofOpen, setIsPaymentProofOpen] = useState(false)
+  const [order, setOrder] = useState(initialOrder)
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false)
+  const [paymentActionError, setPaymentActionError] = useState('')
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
   const publicKtpUrl = getPublicKtpUrl(order)
+  const publicPaymentProofUrl = getPublicPaymentProofUrl(order)
+
+  useEffect(() => {
+    if (!toast) return
+    const timeout = window.setTimeout(() => setToast(null), 2200)
+    return () => window.clearTimeout(timeout)
+  }, [toast])
+
+  async function handleConfirmPayment() {
+    setIsConfirmingPayment(true)
+    setPaymentActionError('')
+    try {
+      const updated = await confirmAdminOrderPayment(order.id)
+      setOrder(updated)
+      setToast({ message: 'Pembayaran berhasil dikonfirmasi.', tone: 'success' })
+    } catch {
+      setPaymentActionError('Gagal mengonfirmasi pembayaran.')
+      setToast({ message: 'Gagal mengonfirmasi pembayaran.', tone: 'error' })
+    } finally {
+      setIsConfirmingPayment(false)
+    }
+  }
 
   return (
     <div className="relative -m-4 min-h-[calc(100vh-4rem)] space-y-4 overflow-hidden bg-white p-4 sm:-m-6 sm:p-6 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6">
@@ -288,7 +323,7 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
           }
         />
 
-        <InlineToast toast={null} />
+        <InlineToast toast={toast} />
 
         <SectionCard title="Informasi Umum Pesanan" icon={<IdCard className="h-5 w-5" />}>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)_220px] lg:items-center">
@@ -297,7 +332,7 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
               <MetaRow label="Tanggal Pesanan" value={formatDetailDate(order.createdAt)} />
             </div>
             <div className="space-y-3">
-              <MetaRow label="Status" value={<Badge variant={getOrderBadgeVariant(order.status)} label={getOrderStatusHeadline(order.status)} />} />
+              <MetaRow label="Status" value={<Badge variant={getOrderBadgeVariant(order.status)} label={getPaymentStatusHeadline(order)} />} />
               <MetaRow label="Total Tagihan" value={formatRupiah(order.grandTotalAmount)} strong />
             </div>
             <div className="flex items-center justify-start lg:justify-center">
@@ -327,8 +362,40 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
         <SectionCard title="Detail Pembayaran" icon={<CreditCard className="h-5 w-5" />}>
           <div className="space-y-3">
             <MetaRow label="Metode" value={order.paymentMethod} strong />
+            <MetaRow
+              label="Status Pembayaran"
+              value={<Badge variant={getOrderBadgeVariant(order.status)} label={getPaymentStatusHeadline(order)} />}
+            />
+            <MetaRow
+              label="Bukti Diupload"
+              value={order.paymentProofUploadedAt ? formatDetailDate(order.paymentProofUploadedAt) : '-'}
+            />
             <MetaRow label="Tanggal Order" value={formatDetailDate(order.createdAt)} />
             <MetaRow label="Terakhir Diperbarui" value={formatDetailDate(order.updatedAt)} />
+            <div className="rounded-2xl border border-navy-100 bg-white/50 p-4">
+              {publicPaymentProofUrl ? (
+                <div className="space-y-3">
+                  <div className="relative h-56 overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
+                    <Image src={publicPaymentProofUrl} alt={`Bukti pembayaran ${order.id}`} fill unoptimized sizes="420px" className="object-contain" />
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button variant="secondary" size="sm" onClick={() => setIsPaymentProofOpen(true)}>
+                      <ExternalLink className="h-4 w-4" />
+                      Lihat Bukti
+                    </Button>
+                    {normalizeOrderStatus(order.status) === 'pending' ? (
+                      <Button size="sm" onClick={handleConfirmPayment} isLoading={isConfirmingPayment}>
+                        <CheckCircle2 className="h-4 w-4" />
+                        Konfirmasi Pembayaran
+                      </Button>
+                    ) : null}
+                  </div>
+                  {paymentActionError ? <p className="text-sm font-medium text-red-600">{paymentActionError}</p> : null}
+                </div>
+              ) : (
+                <p className="text-sm text-navy-600">Bukti pembayaran belum diupload customer.</p>
+              )}
+            </div>
             <div className="rounded-2xl border border-white/45 bg-white/35 p-4 backdrop-blur-[1px]">
               <div className="space-y-3">
                 <SummaryRow label="Subtotal Produk" value={formatRupiah(order.subtotalAmount)} />
@@ -413,6 +480,14 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
           <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={960} height={600} className="max-h-[72vh] w-full rounded-xl object-contain" />
         ) : (
           <p className="text-sm text-navy-600">Gambar KTP belum tersedia.</p>
+        )}
+      </Modal>
+
+      <Modal isOpen={isPaymentProofOpen} onClose={() => setIsPaymentProofOpen(false)} title="Bukti Pembayaran QRIS" size="lg">
+        {publicPaymentProofUrl ? (
+          <Image src={publicPaymentProofUrl} alt={`Bukti pembayaran ${order.id}`} width={960} height={600} unoptimized className="max-h-[72vh] w-full rounded-xl object-contain" />
+        ) : (
+          <p className="text-sm text-navy-600">Bukti pembayaran belum tersedia.</p>
         )}
       </Modal>
 

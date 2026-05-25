@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, HeadphonesIcon, Lock, Mail, MapPin, Plus, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle2, CreditCard, HeadphonesIcon, Lock, Mail, MapPin, Plus, QrCode, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import { apiClient } from '@/core/lib/api-client'
 import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
@@ -85,7 +85,6 @@ const MAX_KTP_FILE_SIZE_BYTES = MAX_KTP_FILE_SIZE_MB * 1024 * 1024
 export default function CheckoutPage() {
   const router = useRouter()
   const waLink = useCompanyWhatsAppLink('Halo admin, saya butuh bantuan terkait checkout.')
-  const [paymentBank, setPaymentBank] = useState('bca')
   const [showEkspedisiModal, setShowEkspedisiModal] = useState(false)
   const [showButikModal, setShowButikModal] = useState(false)
   const [showAddressModal, setShowAddressModal] = useState(false)
@@ -170,6 +169,7 @@ export default function CheckoutPage() {
           village: address.village || '',
           province: address.province,
           postalCode: address.postalCode,
+          rajaOngkirDestinationId: address.rajaOngkirDestinationId,
         }))
         const nextProfile: GuestCheckoutProfile = {
           email: user.email,
@@ -338,6 +338,7 @@ export default function CheckoutPage() {
         if (selectedAddress.district) params.set('destinationDistrict', selectedAddress.district)
         if (selectedAddress.village) params.set('destinationVillage', selectedAddress.village)
         if (selectedAddress.postalCode) params.set('destinationPostalCode', selectedAddress.postalCode)
+        if (selectedAddress.rajaOngkirDestinationId) params.set('destinationId', String(selectedAddress.rajaOngkirDestinationId))
 
         const response = await fetch(`${API_URL}/checkout/shipping-rates?${params.toString()}`, { cache: 'no-store' })
         const json = await response.json()
@@ -697,27 +698,44 @@ export default function CheckoutPage() {
         {/* ── Payment Method ───────────────────────────────────────────── */}
         <section className="bg-white rounded-xl border border-navy-200 p-6 shadow-elevation-low">
           <h2 className="font-heading text-xl font-bold text-navy-900 mb-6">Metode Pembayaran</h2>
-          <p className="font-bold text-navy-900 mb-4 text-sm uppercase tracking-wider">Virtual Account</p>
+          <div className="mb-5">
+            <RadioCard selected onClick={() => undefined}>
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 text-gold-700">
+                  <QrCode className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-navy-900">QRIS Manual</span>
+                    <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
+                      Tersedia
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-navy-600">Bayar dengan scan QRIS, lalu upload bukti pembayaran untuk diverifikasi admin.</p>
+                </div>
+              </div>
+            </RadioCard>
+          </div>
+
+          <p className="font-bold text-navy-500 mb-4 text-sm uppercase tracking-wider">Virtual Account</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {BANKS.map((bank) => (
               <RadioCard
                 key={bank.id}
                 id={`bank-${bank.id}`}
-                selected={paymentBank === bank.id}
-                onClick={() => setPaymentBank(bank.id)}
+                selected={false}
+                onClick={() => undefined}
+                className="pointer-events-none opacity-65"
               >
                 <div className="flex items-center gap-3">
-                  {/* Radio indicator */}
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 [transition-duration:var(--transition-fast)] transition-colors ${
-                    paymentBank === bank.id ? 'border-gold-500 bg-gold-500' : 'border-navy-300'
-                  }`}>
-                    {paymentBank === bank.id && <div className="w-2 h-2 bg-white rounded-full" />}
-                  </div>
-                  {/* Bank logo placeholder */}
+                  <CreditCard className="h-5 w-5 flex-shrink-0 text-navy-300" />
                   <div className="w-14 h-8 bg-surface rounded border border-navy-100 flex items-center justify-center text-[10px] font-bold text-navy-600 flex-shrink-0">
                     {bank.label}
                   </div>
-                  <span className="font-bold text-navy-900 text-sm">{bank.name}</span>
+                  <span className="min-w-0 flex-1 font-bold text-navy-700 text-sm">{bank.name}</span>
+                  <span className="rounded-full border border-navy-200 bg-navy-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-navy-500">
+                    Coming Soon
+                  </span>
                 </div>
               </RadioCard>
             ))}
@@ -883,6 +901,7 @@ export default function CheckoutPage() {
                     district: '',
                     village: '',
                     postalCode: '',
+                    rajaOngkirDestinationId: undefined,
                   }))
                 }}
                 disabled={isLoadingDestinations}
@@ -916,6 +935,7 @@ export default function CheckoutPage() {
                     district: '',
                     village: '',
                     postalCode: '',
+                    rajaOngkirDestinationId: undefined,
                   }))
                 }}
                 disabled={!selectedProvinceId || cityOptions.length === 0}
@@ -946,6 +966,7 @@ export default function CheckoutPage() {
                     district: selected?.name || '',
                     village: '',
                     postalCode: '',
+                    rajaOngkirDestinationId: undefined,
                   }))
                 }}
                 disabled={!selectedCityId || districtOptions.length === 0}
@@ -973,6 +994,7 @@ export default function CheckoutPage() {
                     ...current,
                     village: target?.name || '',
                     postalCode: target?.zipCode || '',
+                    rajaOngkirDestinationId: target?.id,
                   }))
                 }}
                 disabled={!selectedDistrictId || subdistrictOptions.length === 0}

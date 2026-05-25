@@ -11,8 +11,16 @@ const SHIPPING_COURIERS = [
   { code: 'jnt', courier: 'JNT', name: 'J&T Express' },
 ] as const;
 
+const RAJAONGKIR_STATIC_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const RAJAONGKIR_RATE_CACHE_TTL_MS = 15 * 60 * 1000;
+const RAJAONGKIR_CACHE_MAX_ENTRIES = 500;
+
+let rajaOngkirOriginIdPromise: Promise<string | number> | null = null;
+const rajaOngkirResponseCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+
 type ShippingRateRequest = {
   destinationCity: string;
+  destinationId?: number;
   destinationDistrict?: string;
   destinationVillage?: string;
   destinationPostalCode?: string;
@@ -65,6 +73,7 @@ function mapAddress(address: any, user: { name: string; phone: string | null }) 
     village: address.village || '',
     province: address.province,
     postalCode: address.postalCode,
+    rajaOngkirDestinationId: address.rajaOngkirDestinationId,
     isDefault: address.isDefault,
   };
 }
@@ -141,6 +150,7 @@ export async function saveCheckoutCustomer(input: CheckoutCustomerBody, ktpFile?
       village: input.village || null,
       province: input.province!,
       postalCode: input.postalCode!,
+      rajaOngkirDestinationId: input.rajaOngkirDestinationId || null,
       isDefault: true,
     };
 
@@ -218,6 +228,65 @@ async function fetchRajaOngkir(path: string, init?: RequestInit) {
   return json;
 }
 
+function stringifyRequestBody(body: RequestInit['body']) {
+  if (!body) return '';
+  if (typeof body === 'string') return body;
+  if (body instanceof URLSearchParams) return body.toString();
+  return '';
+}
+
+function rememberRajaOngkirResponse<T>(key: string, ttlMs: number, factory: () => Promise<T>, persist = false) {
+  const now = Date.now();
+  const cached = rajaOngkirResponseCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+
+  const promise = (async () => {
+    if (persist) {
+      const dbCached = await prisma.rajaOngkirCache.findUnique({ where: { cacheKey: key } });
+      if (dbCached && dbCached.expiresAt.getTime() > Date.now()) {
+        return dbCached.payload as T;
+      }
+    }
+
+    const fresh = await factory();
+    if (persist) {
+      await prisma.rajaOngkirCache.upsert({
+        where: { cacheKey: key },
+        create: {
+          cacheKey: key,
+          payload: fresh as any,
+          expiresAt: new Date(Date.now() + ttlMs),
+        },
+        update: {
+          payload: fresh as any,
+          expiresAt: new Date(Date.now() + ttlMs),
+        },
+      });
+    }
+    return fresh;
+  })().catch((error) => {
+    if (rajaOngkirResponseCache.get(key)?.promise === promise) {
+      rajaOngkirResponseCache.delete(key);
+    }
+    throw error;
+  });
+
+  if (rajaOngkirResponseCache.size >= RAJAONGKIR_CACHE_MAX_ENTRIES) {
+    const oldestKey = rajaOngkirResponseCache.keys().next().value;
+    if (oldestKey) rajaOngkirResponseCache.delete(oldestKey);
+  }
+
+  rajaOngkirResponseCache.set(key, { expiresAt: now + ttlMs, promise });
+  return promise;
+}
+
+function fetchCachedRajaOngkir(path: string, init: RequestInit | undefined, ttlMs: number, persist = false) {
+  const method = init?.method || 'GET';
+  const body = stringifyRequestBody(init?.body);
+  const cacheKey = `${method}:${path}:${body}`;
+  return rememberRajaOngkirResponse(cacheKey, ttlMs, () => fetchRajaOngkir(path, init), persist);
+}
+
 function destinationSearchTerms(input: ShippingRateRequest | { destinationCity: string }) {
   const city = input.destinationCity;
   const district = 'destinationDistrict' in input ? input.destinationDistrict : undefined;
@@ -255,8 +324,8 @@ function scoreDestination(item: any, input: ShippingRateRequest | { destinationC
 async function findRajaOngkirDestinationId(input: ShippingRateRequest | { destinationCity: string }) {
   for (const term of destinationSearchTerms(input)) {
     const params = new URLSearchParams({ search: term, limit: '10', offset: '0' });
-    const json = await fetchRajaOngkir(`/destination/domestic-destination?${params.toString()}`);
-    const destinations = Array.isArray(json.data) ? json.data : [];
+    const json = await fetchCachedRajaOngkir(`/destination/domestic-destination?${params.toString()}`, undefined, RAJAONGKIR_STATIC_CACHE_TTL_MS, true);
+    const destinations = Array.isArray(json.data) ? [...json.data] : [];
     if (destinations.length > 0) {
       const [best] = destinations.sort((a: any, b: any) => scoreDestination(b, input) - scoreDestination(a, input));
       return best.id;
@@ -287,25 +356,25 @@ function mapNamedItem(item: any): RajaOngkirNamedItem {
 }
 
 export async function getRajaOngkirProvinces() {
-  const json = await fetchRajaOngkir('/destination/province');
+  const json = await fetchCachedRajaOngkir('/destination/province', undefined, RAJAONGKIR_STATIC_CACHE_TTL_MS, true);
   const rows = Array.isArray(json.data) ? json.data : [];
   return rows.map(mapNamedItem);
 }
 
 export async function getRajaOngkirCities(provinceId: number) {
-  const json = await fetchRajaOngkir(`/destination/city/${provinceId}`);
+  const json = await fetchCachedRajaOngkir(`/destination/city/${provinceId}`, undefined, RAJAONGKIR_STATIC_CACHE_TTL_MS, true);
   const rows = Array.isArray(json.data) ? json.data : [];
   return rows.map(mapNamedItem);
 }
 
 export async function getRajaOngkirDistricts(cityId: number) {
-  const json = await fetchRajaOngkir(`/destination/district/${cityId}`);
+  const json = await fetchCachedRajaOngkir(`/destination/district/${cityId}`, undefined, RAJAONGKIR_STATIC_CACHE_TTL_MS, true);
   const rows = Array.isArray(json.data) ? json.data : [];
   return rows.map(mapNamedItem);
 }
 
 export async function getRajaOngkirSubdistricts(districtId: number) {
-  const json = await fetchRajaOngkir(`/destination/sub-district/${districtId}`);
+  const json = await fetchCachedRajaOngkir(`/destination/sub-district/${districtId}`, undefined, RAJAONGKIR_STATIC_CACHE_TTL_MS, true);
   const rows = Array.isArray(json.data) ? json.data : [];
   return rows.map(mapNamedItem);
 }
@@ -323,7 +392,7 @@ export async function searchRajaOngkirDestinations(search: string) {
       offset: String(page * limit),
     });
 
-    const json = await fetchRajaOngkir(`/destination/domestic-destination?${params.toString()}`);
+    const json = await fetchCachedRajaOngkir(`/destination/domestic-destination?${params.toString()}`, undefined, RAJAONGKIR_STATIC_CACHE_TTL_MS, true);
     const rows = Array.isArray(json.data) ? json.data : [];
     all.push(...rows);
     if (rows.length < limit) break;
@@ -368,11 +437,11 @@ async function fetchCourierRate(originId: string | number, destinationId: string
     price: 'lowest',
   });
 
-  const json = await fetchRajaOngkir('/calculate/domestic-cost', {
+  const json = await fetchCachedRajaOngkir('/calculate/domestic-cost', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
-  });
+  }, RAJAONGKIR_RATE_CACHE_TTL_MS);
 
   const rates = (Array.isArray(json.data) ? json.data : []).map((item: any): ShippingRate => ({
     id: `${courier.code}-${String(item.service || item.description || 'regular').toLowerCase().replace(/\s+/g, '-')}`,
@@ -387,10 +456,25 @@ async function fetchCourierRate(originId: string | number, destinationId: string
   return rates.sort((a: ShippingRate, b: ShippingRate) => a.price - b.price)[0] || fallbackShippingRate(courier);
 }
 
+async function getRajaOngkirOriginId() {
+  const configuredOriginId = env.RAJAONGKIR_ORIGIN_ID.trim();
+  if (configuredOriginId) return configuredOriginId;
+
+  if (!rajaOngkirOriginIdPromise) {
+    rajaOngkirOriginIdPromise = findRajaOngkirDestinationId({ destinationCity: env.RAJAONGKIR_ORIGIN_SEARCH })
+      .catch((error) => {
+        rajaOngkirOriginIdPromise = null;
+        throw error;
+      });
+  }
+
+  return rajaOngkirOriginIdPromise;
+}
+
 export async function getShippingRates(input: ShippingRateRequest) {
   const [originId, destinationId] = await Promise.all([
-    findRajaOngkirDestinationId({ destinationCity: env.RAJAONGKIR_ORIGIN_SEARCH }),
-    findRajaOngkirDestinationId(input),
+    getRajaOngkirOriginId(),
+    input.destinationId || findRajaOngkirDestinationId(input),
   ]);
 
   const rates = await Promise.all(SHIPPING_COURIERS.map(async (courier) => {

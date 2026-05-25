@@ -50,6 +50,8 @@ export interface AdminOrderRecord {
   totalAmount: number
   status: OrderStatus
   paymentMethod: string
+  paymentProofUrl?: string | null
+  paymentProofUploadedAt?: string | null
   shippingMethod: string
   trackingNumber?: string
   requiresKtp: boolean

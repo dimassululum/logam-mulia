@@ -34,6 +34,7 @@ export const env = {
 
   RAJAONGKIR_API_KEY: process.env.RAJAONGKIR_API_KEY || '',
   RAJAONGKIR_BASE_URL: process.env.RAJAONGKIR_BASE_URL || 'https://rajaongkir.komerce.id/api/v1',
+  RAJAONGKIR_ORIGIN_ID: process.env.RAJAONGKIR_ORIGIN_ID || '',
   RAJAONGKIR_ORIGIN_SEARCH: process.env.RAJAONGKIR_ORIGIN_SEARCH || 'Jakarta Timur',
 
   RESEND_API_KEY: process.env.RESEND_API_KEY || '',
@@ -44,6 +45,7 @@ export const env = {
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASS: process.env.SMTP_PASS || '',
   SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+  SMTP_TIMEOUT_MS: parseInt(process.env.SMTP_TIMEOUT_MS || '10000', 10),
   SMTP_TLS_REJECT_UNAUTHORIZED: process.env.SMTP_TLS_REJECT_UNAUTHORIZED
     ? process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false'
     : (process.env.NODE_ENV || 'development') !== 'development',
@@ -51,10 +53,10 @@ export const env = {
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',
   MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB || '10', 10),
 
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
+  FRONTEND_URL: trimTrailingSlash(process.env.FRONTEND_URL || 'http://localhost:3000'),
   FRONTEND_URLS: (process.env.FRONTEND_URLS || '')
     .split(',')
-    .map((value) => value.trim())
+    .map((value) => trimTrailingSlash(value.trim()))
     .filter(Boolean),
 
   get IS_PRODUCTION() {

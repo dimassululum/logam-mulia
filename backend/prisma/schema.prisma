@@ -84,9 +84,21 @@ model Address {
   village    String?
   province   String
   postalCode String   @map("postal_code")
+  rajaOngkirDestinationId Int? @map("raja_ongkir_destination_id")
   isDefault  Boolean  @default(false) @map("is_default")
 
   @@map("addresses")
+}
+
+model RajaOngkirCache {
+  cacheKey  String   @id @map("cache_key")
+  payload   Json
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("raja_ongkir_cache")
+  @@index([expiresAt])
 }
 
 model Category {
@@ -145,6 +157,9 @@ model Order {
   adminFee              Decimal          @default(0) @map("admin_fee") @db.Decimal(15, 2)
   discountAmount        Decimal          @default(0) @map("discount_amount") @db.Decimal(15, 2)
   grandTotal            Decimal          @map("grand_total") @db.Decimal(15, 2)
+  paymentMethod         String           @default("QRIS Manual") @map("payment_method")
+  paymentProofUrl       String?          @map("payment_proof_url")
+  paymentProofUploadedAt DateTime?       @map("payment_proof_uploaded_at")
   shippingAddress       String           @map("shipping_address")
   shippingCity          String           @map("shipping_city")
   shippingProvince      String?          @map("shipping_province")

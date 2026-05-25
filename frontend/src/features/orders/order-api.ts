@@ -8,6 +8,26 @@ import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 const API_URL = resolvePublicApiBaseUrl()
 const CURRENT_ORDER_KEY = 'lm-current-order'
 
+export interface PaginationMeta {
+  total: number
+  page: number
+  limit: number
+  totalPages: number
+}
+
+export interface PaginatedAdminOrders {
+  data: AdminOrderRecord[]
+  meta: PaginationMeta
+}
+
+interface FetchAdminOrdersParams {
+  page?: number
+  limit?: number
+  search?: string
+  status?: string
+  shipping?: string
+}
+
 interface CreateOrderInput {
   profile: GuestCheckoutProfile
   ordererName: string
@@ -47,7 +67,7 @@ export async function createCustomerOrder(input: CreateOrderInput) {
       email: input.profile.email,
       customerName: input.ordererName,
       customerPhone: input.selectedAddress?.phone || input.profile.phone || '',
-      paymentMethod: 'Virtual Account',
+      paymentMethod: 'QRIS Manual',
       deliveryType: input.deliveryType,
       shippingCourier: input.deliveryType === 'butik' ? 'SELFPICKUP' : input.selectedEkspedisi?.courier || input.selectedEkspedisi?.name || 'Ekspedisi',
       shippingService: input.deliveryType === 'butik' ? 'Ambil di Butik' : input.selectedEkspedisi?.service || input.selectedEkspedisi?.time || '',
@@ -79,11 +99,20 @@ export async function createCustomerOrder(input: CreateOrderInput) {
   return order
 }
 
-export async function markCurrentOrderPaid(orderId: string) {
-  const response = await apiClient.post<{ data: AdminOrderDetailRecord }>(`/orders/${encodeURIComponent(orderId)}/mark-paid`)
+export async function uploadCurrentOrderPaymentProof(orderId: string, paymentProof: File) {
+  const formData = new FormData()
+  formData.append('paymentProof', paymentProof)
+  const response = await apiClient.post<{ data: AdminOrderDetailRecord }>(`/orders/${encodeURIComponent(orderId)}/payment-proof`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
   const order = response.data.data
   saveCurrentOrder(order)
   return order
+}
+
+export async function confirmAdminOrderPayment(orderId: string) {
+  const response = await apiClient.post<{ data: AdminOrderDetailRecord }>(`/orders/${encodeURIComponent(orderId)}/confirm-payment`)
+  return response.data.data
 }
 
 export async function fetchCustomerOrders() {
@@ -96,9 +125,20 @@ export async function fetchCustomerOrder(id: string) {
   return response.data.data
 }
 
-export async function fetchAdminOrders() {
-  const response = await apiClient.get<{ data: AdminOrderRecord[] }>('/orders')
-  return response.data.data
+export async function fetchAdminOrders(params: FetchAdminOrdersParams = {}): Promise<PaginatedAdminOrders> {
+  const response = await apiClient.get<{ data: AdminOrderRecord[]; meta: PaginationMeta }>('/orders', {
+    params: {
+      page: params.page,
+      limit: params.limit,
+      search: params.search || undefined,
+      status: params.status && params.status !== 'all' ? params.status : undefined,
+      shipping: params.shipping && params.shipping !== 'all' ? params.shipping : undefined,
+    },
+  })
+  return {
+    data: response.data.data,
+    meta: response.data.meta,
+  }
 }
 
 export async function fetchAdminOrder(id: string) {

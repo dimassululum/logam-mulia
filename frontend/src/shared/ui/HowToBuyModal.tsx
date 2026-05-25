@@ -79,7 +79,7 @@ export default function HowToBuyModal({ isOpen, onClose }: HowToBuyModalProps) {
                 <span className="font-heading text-3xl font-bold text-gold-500 leading-none block">4</span>
               </div>
               <div className="pt-0">
-                <p className="text-base text-navy-900 font-medium m-0 leading-snug">Lakukan pembayaran via Virtual Account.</p>
+                <p className="text-base text-navy-900 font-medium m-0 leading-snug">Lakukan pembayaran via QRIS manual dan upload bukti bayar.</p>
               </div>
             </li>
             {/* Step 5 */}
