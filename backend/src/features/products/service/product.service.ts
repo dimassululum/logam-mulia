@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '../../../core/config/database';
 import { NotFoundError, ConflictError } from '../../../core/utils/errors';
+import { persistDataUrlToUpload } from '../../../core/utils/public-url';
 import type { CreateProductInput, DisplayReviewInput, UpdateProductInput } from '../schema/product.schema';
 
 interface QueryOptions {
@@ -22,17 +23,21 @@ interface DisplayReviewRecord {
 
 interface ProductDisplayMeta {
   displayRating: number;
+  reviewCount: number;
   soldCount: number;
   displayReviews: DisplayReviewRecord[];
 }
 
 type ProductDisplayMetaMap = Record<string, ProductDisplayMeta>;
+type ProductDisplaySummaryMap = Record<string, Omit<ProductDisplayMeta, 'displayReviews'>>;
 
 const PRODUCT_DISPLAY_META_KEY = 'product_display_reviews';
+const PRODUCT_DISPLAY_SUMMARY_KEY = 'product_display_review_summaries';
 
 function defaultProductMeta(): ProductDisplayMeta {
   return {
     displayRating: 5,
+    reviewCount: 0,
     soldCount: 0,
     displayReviews: [],
   };
@@ -51,14 +56,52 @@ async function readProductDisplayMeta(): Promise<ProductDisplayMetaMap> {
 }
 
 async function writeProductDisplayMeta(meta: ProductDisplayMetaMap) {
-  await prisma.setting.upsert({
-    where: { key: PRODUCT_DISPLAY_META_KEY },
-    update: { value: JSON.stringify(meta) },
-    create: { key: PRODUCT_DISPLAY_META_KEY, value: JSON.stringify(meta) },
-  });
+  const summary = buildProductDisplaySummary(meta);
+
+  await prisma.$transaction([
+    prisma.setting.upsert({
+      where: { key: PRODUCT_DISPLAY_META_KEY },
+      update: { value: JSON.stringify(meta) },
+      create: { key: PRODUCT_DISPLAY_META_KEY, value: JSON.stringify(meta) },
+    }),
+    prisma.setting.upsert({
+      where: { key: PRODUCT_DISPLAY_SUMMARY_KEY },
+      update: { value: JSON.stringify(summary) },
+      create: { key: PRODUCT_DISPLAY_SUMMARY_KEY, value: JSON.stringify(summary) },
+    }),
+  ]);
 }
 
-function attachProductMeta<T extends { id: string }>(product: T, meta: ProductDisplayMetaMap) {
+function buildProductDisplaySummary(meta: ProductDisplayMetaMap): ProductDisplaySummaryMap {
+  return Object.fromEntries(
+    Object.entries(meta).map(([productId, value]) => [
+      productId,
+      {
+        displayRating: value.displayRating ?? 5,
+        reviewCount: value.reviewCount ?? (value.displayReviews || []).length,
+        soldCount: value.soldCount ?? 0,
+      },
+    ]),
+  );
+}
+
+async function readProductDisplaySummary(): Promise<ProductDisplaySummaryMap> {
+  const setting = await prisma.setting.findUnique({ where: { key: PRODUCT_DISPLAY_SUMMARY_KEY } });
+  if (!setting) return {};
+
+  try {
+    const parsed = JSON.parse(setting.value) as ProductDisplaySummaryMap;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function attachProductMeta<T extends { id: string }>(
+  product: T,
+  meta: Record<string, Partial<ProductDisplayMeta>>,
+  options: { includeDisplayReviews?: boolean } = {},
+) {
   const productMeta = meta[product.id] || defaultProductMeta();
   const displayReviews = productMeta.displayReviews || [];
 
@@ -66,8 +109,8 @@ function attachProductMeta<T extends { id: string }>(product: T, meta: ProductDi
     ...product,
     displayRating: productMeta.displayRating ?? 5,
     soldCount: productMeta.soldCount ?? 0,
-    reviewCount: displayReviews.length,
-    displayReviews,
+    reviewCount: productMeta.reviewCount ?? displayReviews.length,
+    displayReviews: options.includeDisplayReviews === false ? [] : displayReviews,
   };
 }
 
@@ -76,6 +119,7 @@ function splitProductPayload<T extends Record<string, any>>(data: T) {
   return {
     productData,
     displayRating: displayRating === undefined ? undefined : Number(displayRating),
+    reviewCount: reviewCount === undefined ? undefined : Number(reviewCount),
     soldCount: soldCount === undefined ? undefined : Number(soldCount),
   };
 }
@@ -100,18 +144,33 @@ export async function getAllProducts(options: QueryOptions) {
       where,
       skip,
       take: limit,
-      include: {
+      select: {
+        id: true,
+        categoryId: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        weightGram: true,
+        kadar: true,
+        stock: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
         category: { select: { id: true, name: true, slug: true } },
-        images: { orderBy: { sortOrder: 'asc' } },
-        promos: { where: { isActive: true } }
+        images: {
+          select: { id: true, imageUrl: true, isPrimary: true, sortOrder: true },
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 1,
+        },
       },
       orderBy: { createdAt: 'desc' },
     }),
   ]);
 
-  const meta = await readProductDisplayMeta();
+  const meta = await readProductDisplaySummary();
 
-  return { total, products: products.map((product) => attachProductMeta(product, meta)) };
+  return { total, products: products.map((product) => attachProductMeta(product, meta, { includeDisplayReviews: false })) };
 }
 
 export async function getProductBySlug(slugOrId: string) {
@@ -138,7 +197,7 @@ export async function getProductBySlug(slugOrId: string) {
 }
 
 export async function createProduct(data: CreateProductInput) {
-  const { productData, displayRating, soldCount } = splitProductPayload(data as any);
+  const { productData, displayRating, reviewCount, soldCount } = splitProductPayload(data as any);
   const existing = await prisma.product.findUnique({ where: { slug: productData.slug } });
   if (existing) {
     throw new ConflictError('Produk dengan slug tersebut sudah ada');
@@ -146,21 +205,22 @@ export async function createProduct(data: CreateProductInput) {
 
   const product = await prisma.product.create({ data: productData as CreateProductInput });
 
-  if (displayRating !== undefined || soldCount !== undefined) {
+  if (displayRating !== undefined || reviewCount !== undefined || soldCount !== undefined) {
     const meta = await readProductDisplayMeta();
     meta[product.id] = {
       ...defaultProductMeta(),
       displayRating: displayRating ?? 5,
+      reviewCount: reviewCount ?? 0,
       soldCount: soldCount ?? 0,
     };
     await writeProductDisplayMeta(meta);
   }
 
-  return attachProductMeta(product, await readProductDisplayMeta());
+  return attachProductMeta(product, await readProductDisplaySummary(), { includeDisplayReviews: false });
 }
 
 export async function updateProduct(id: string, data: UpdateProductInput) {
-  const { productData, displayRating, soldCount } = splitProductPayload(data as any);
+  const { productData, displayRating, reviewCount, soldCount } = splitProductPayload(data as any);
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) {
     throw new NotFoundError('Produk');
@@ -178,18 +238,19 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
     data: productData as UpdateProductInput,
   });
 
-  if (displayRating !== undefined || soldCount !== undefined) {
+  if (displayRating !== undefined || reviewCount !== undefined || soldCount !== undefined) {
     const meta = await readProductDisplayMeta();
     const current = meta[id] || defaultProductMeta();
     meta[id] = {
       ...current,
       displayRating: displayRating ?? current.displayRating,
+      reviewCount: reviewCount ?? current.reviewCount ?? (current.displayReviews || []).length,
       soldCount: soldCount ?? current.soldCount,
     };
     await writeProductDisplayMeta(meta);
   }
 
-  return attachProductMeta(product, await readProductDisplayMeta());
+  return attachProductMeta(product, await readProductDisplaySummary(), { includeDisplayReviews: false });
 }
 
 export async function deleteProduct(id: string) {
@@ -279,7 +340,7 @@ export async function createDisplayReview(productId: string, data: DisplayReview
   const review = {
     id: randomUUID(),
     reviewerName: data.reviewerName,
-    imageUrl: data.imageUrl || '',
+    imageUrl: data.imageUrl ? await persistDataUrlToUpload(data.imageUrl, 'review') : '',
     description: data.description,
     createdAt: now,
     updatedAt: now,
@@ -287,6 +348,7 @@ export async function createDisplayReview(productId: string, data: DisplayReview
 
   meta[productId] = {
     ...current,
+    reviewCount: Math.max(current.reviewCount ?? 0, ((current.displayReviews || []).length + 1)),
     displayReviews: [review, ...(current.displayReviews || [])],
   };
   await writeProductDisplayMeta(meta);
@@ -301,17 +363,23 @@ export async function updateDisplayReview(reviewId: string, data: DisplayReviewI
   for (const productId of Object.keys(meta)) {
     const current = meta[productId] || defaultProductMeta();
     const reviews = current.displayReviews || [];
-    const nextReviews = reviews.map((review) => {
-      if (review.id !== reviewId) return review;
+    const nextReviews: DisplayReviewRecord[] = [];
+
+    for (const review of reviews) {
+      if (review.id !== reviewId) {
+        nextReviews.push(review);
+        continue;
+      }
+
       updatedReview = {
         ...review,
         reviewerName: data.reviewerName,
-        imageUrl: data.imageUrl || '',
+        imageUrl: data.imageUrl ? await persistDataUrlToUpload(data.imageUrl, 'review') : '',
         description: data.description,
         updatedAt: new Date().toISOString(),
       };
-      return updatedReview;
-    });
+      nextReviews.push(updatedReview);
+    }
 
     meta[productId] = { ...current, displayReviews: nextReviews };
   }

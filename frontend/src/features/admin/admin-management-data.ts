@@ -49,7 +49,10 @@ export interface AdminOrderRecord {
   itemCount: number
   totalAmount: number
   status: OrderStatus
+  paymentMethodCode?: string | null
   paymentMethod: string
+  paymentMethodCategory?: string | null
+  paymentMethodConfig?: PaymentMethodConfig | null
   paymentProofUrl?: string | null
   paymentProofUploadedAt?: string | null
   shippingMethod: string
@@ -58,6 +61,14 @@ export interface AdminOrderRecord {
   address: string
   createdAt: string
   updatedAt: string
+}
+
+export interface PaymentMethodConfig {
+  imageUrl?: string
+  bankName?: string
+  accountNumber?: string
+  accountHolder?: string
+  instructions?: string
 }
 
 export interface AdminOrderLineItem {

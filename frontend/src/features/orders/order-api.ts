@@ -36,6 +36,7 @@ interface CreateOrderInput {
   selectedAddress: GuestCheckoutAddress | null
   selectedEkspedisi: { name: string; time: string; price: number; courier?: string; service?: string } | null
   selectedButik: { name: string; city: string; address: string } | null
+  paymentMethodCode: string
   voucher: ClaimedVoucher | null
   discountAmount: number
 }
@@ -67,7 +68,7 @@ export async function createCustomerOrder(input: CreateOrderInput) {
       email: input.profile.email,
       customerName: input.ordererName,
       customerPhone: input.selectedAddress?.phone || input.profile.phone || '',
-      paymentMethod: 'QRIS Manual',
+      paymentMethodCode: input.paymentMethodCode,
       deliveryType: input.deliveryType,
       shippingCourier: input.deliveryType === 'butik' ? 'SELFPICKUP' : input.selectedEkspedisi?.courier || input.selectedEkspedisi?.name || 'Ekspedisi',
       shippingService: input.deliveryType === 'butik' ? 'Ambil di Butik' : input.selectedEkspedisi?.service || input.selectedEkspedisi?.time || '',

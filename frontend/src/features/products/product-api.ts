@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { Product } from '@/core/types'
 import { resolvePublicApiBaseUrl, resolvePublicAssetUrl } from '@/core/lib/public-url'
 
@@ -28,6 +29,11 @@ export interface StorefrontVoucher {
   maxDiscount: number | null
   expiresAt: string | null
   productIds: string[]
+}
+
+interface StorefrontProductListOptions {
+  limit?: number
+  isActive?: boolean
 }
 
 async function fetchApi<T>(path: string, fallback: T): Promise<T> {
@@ -93,17 +99,32 @@ export function mapApiProduct(product: any): ProductDetail {
   }
 }
 
-export async function getStorefrontProducts() {
-  const products = await fetchApi<any[]>('/products?limit=100&isActive=true', [])
-  return products.map(mapApiProduct)
+function productListPath(options: StorefrontProductListOptions = {}) {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 100),
+  })
+
+  if (options.isActive !== false) params.set('isActive', 'true')
+
+  return `/products?${params.toString()}`
 }
 
-export async function getStorefrontProduct(slug: string) {
+export const getStorefrontProducts = cache(async (options: StorefrontProductListOptions = {}) => {
+  const products = await fetchApi<any[]>(productListPath(options), [])
+  return products.map(mapApiProduct)
+})
+
+export const getStorefrontProduct = cache(async (slug: string) => {
   const product = await fetchApi<any | null>(`/products/${encodeURIComponent(slug)}`, null)
   return product ? mapApiProduct(product) : null
-}
+})
 
-export async function getStorefrontVouchers() {
+export const getRelatedStorefrontProducts = cache(async (currentProductId: string, limit = 4) => {
+  const products = await getStorefrontProducts({ limit: limit + 1 })
+  return products.filter((product) => product.id !== currentProductId).slice(0, limit)
+})
+
+export const getStorefrontVouchers = cache(async () => {
   const vouchers = await fetchApi<any[]>('/vouchers/public?limit=20', [])
   return vouchers.map((voucher) => ({
     id: voucher.id,
@@ -115,4 +136,4 @@ export async function getStorefrontVouchers() {
     expiresAt: voucher.expiresAt || null,
     productIds: Array.isArray(voucher.products) ? voucher.products.map((product: any) => product.id).filter(Boolean) : [],
   })) as StorefrontVoucher[]
-}
+})

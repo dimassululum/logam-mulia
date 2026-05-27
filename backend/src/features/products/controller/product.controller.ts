@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import * as productService from '../service/product.service';
 import { sendSuccess, paginate, parsePagination } from '../../../core/utils/response';
-import { buildUploadedFileDataUrl } from '../../../core/utils/public-url';
+import { buildUploadedFileUrl } from '../../../core/utils/public-url';
 
 export async function getAllProducts(req: Request, res: Response) {
   const { page, limit } = parsePagination(req.query as any);
@@ -51,7 +51,7 @@ export async function uploadImage(req: Request, res: Response) {
     return sendSuccess({ res, statusCode: 400, message: 'Tidak ada file yang diupload' });
   }
 
-  const imageUrl = await buildUploadedFileDataUrl(file);
+  const imageUrl = buildUploadedFileUrl(file);
   const image = await productService.addProductImage(id, imageUrl, isPrimary === 'true');
 
   sendSuccess({ res, statusCode: 201, message: 'Foto berhasil ditambahkan', data: image });

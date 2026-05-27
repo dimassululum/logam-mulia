@@ -4,6 +4,7 @@ import { env } from '../../../core/config/env';
 import { sendEmail } from '../../../core/utils/email';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../core/utils/errors';
 import { logger } from '../../../core/utils/logger';
+import { resolveActivePaymentMethodForOrder } from '../../payment-methods/service/payment-method.service';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '../schema/order.schema';
 
 const orderInclude = {
@@ -11,6 +12,7 @@ const orderInclude = {
   items: { orderBy: { id: 'asc' } },
   statusLogs: { orderBy: { createdAt: 'desc' } },
   voucher: { select: { id: true, code: true } },
+  paymentMethodRef: { select: { code: true, category: true, config: true } },
 } satisfies Prisma.OrderInclude;
 
 const orderListInclude = {
@@ -396,7 +398,10 @@ export function mapOrder(order: any) {
     itemCount: getItemCount(order),
     totalAmount: grandTotalAmount,
     status: mapPublicStatus(order.status),
+    paymentMethodCode: order.paymentMethodCode || null,
     paymentMethod: order.paymentMethod || 'QRIS Manual',
+    paymentMethodConfig: order.paymentMethodRef?.config || null,
+    paymentMethodCategory: order.paymentMethodRef?.category || null,
     paymentProofUrl: order.paymentProofUrl || null,
     paymentProofUploadedAt: order.paymentProofUploadedAt || null,
     shippingMethod: deliveryMethod === 'self_pickup' ? 'Self Pickup' : order.shippingCourier || 'Ekspedisi',
@@ -471,6 +476,7 @@ function mapOrderList(order: any) {
     itemCount: getItemCount(order),
     totalAmount: toMoney(order.grandTotal),
     status: mapPublicStatus(order.status),
+    paymentMethodCode: order.paymentMethodCode || null,
     paymentMethod: order.paymentMethod || 'QRIS Manual',
     paymentProofUrl: order.paymentProofUrl || null,
     paymentProofUploadedAt: order.paymentProofUploadedAt || null,
@@ -565,6 +571,7 @@ export async function getOrderByIdForUser(id: string, userId: string) {
 export async function createOrder(input: CreateOrderInput) {
   const user = await prisma.user.findUnique({ where: { email: input.email.trim().toLowerCase() } });
   if (!user) throw new BadRequestError('Data customer belum tersimpan. Ulangi dari halaman checkout.');
+  const paymentMethod = await resolveActivePaymentMethodForOrder(input.paymentMethodCode);
 
   const subtotal = input.items.reduce((sum, item) => sum + item.priceAtPurchase * item.quantity, 0);
   const grandTotal = Math.max(0, subtotal + input.shippingCost - input.discountAmount);
@@ -579,7 +586,8 @@ export async function createOrder(input: CreateOrderInput) {
       shippingCost: input.shippingCost,
       discountAmount: input.discountAmount,
       grandTotal,
-      paymentMethod: input.paymentMethod || 'QRIS Manual',
+      paymentMethodCode: paymentMethod.code,
+      paymentMethod: paymentMethod.label,
       shippingAddress: input.shippingAddress,
       shippingCity: input.deliveryType === 'butik' ? input.boutiqueName || input.shippingCity || '-' : input.shippingCity || '-',
       shippingProvince: input.shippingProvince || null,
@@ -603,7 +611,7 @@ export async function createOrder(input: CreateOrderInput) {
       statusLogs: {
         create: {
           status: OrderStatus.PENDING,
-          note: 'Pesanan dibuat dari checkout customer.',
+          note: `Pesanan dibuat dari checkout customer dengan metode ${paymentMethod.label}.`,
         },
       },
     },
@@ -661,7 +669,7 @@ export async function uploadPaymentProof(id: string, userId: string, file: Expre
       statusLogs: {
         create: {
           status: OrderStatus.PENDING,
-          note: 'Customer mengupload bukti pembayaran QRIS. Menunggu verifikasi admin.',
+          note: `Customer mengupload bukti pembayaran ${existing.paymentMethod || 'QRIS Manual'}. Menunggu verifikasi admin.`,
         },
       },
     },
@@ -696,7 +704,7 @@ export async function confirmOrderPayment(id: string, role: Role) {
       statusLogs: {
         create: {
           status: OrderStatus.PAID,
-          note: 'Pembayaran QRIS dikonfirmasi oleh admin.',
+          note: `Pembayaran ${existing.paymentMethod || 'QRIS Manual'} dikonfirmasi oleh admin.`,
         },
       },
     },

@@ -14,6 +14,7 @@ import {
   LineChart,
   PanelsTopLeft,
   Star,
+  CreditCard,
 } from 'lucide-react'
 
 export interface AdminNavChildItem {
@@ -36,6 +37,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin/metal-prices', label: 'Harga Logam', icon: LineChart },
   { href: '/admin/categories', label: 'Kategori', icon: FolderTree },
   { href: '/admin/orders', label: 'Pesanan', icon: ShoppingCart },
+  { href: '/admin/payment-methods', label: 'Pembayaran', icon: CreditCard },
   { href: '/admin/customers', label: 'Data Customer', icon: Users },
   { href: '/admin/vouchers', label: 'Voucher', icon: TicketPercent },
   { href: '/admin/boutiques', label: 'Butik', icon: Store },

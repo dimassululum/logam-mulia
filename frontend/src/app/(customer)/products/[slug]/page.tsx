@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { formatRupiah } from '@/core/lib/utils'
 import { ChevronRight, ShieldCheck, Star, ShoppingCart } from 'lucide-react'
 import {
+  getRelatedStorefrontProducts,
   getStorefrontProduct,
-  getStorefrontProducts,
   getStorefrontVouchers,
 } from '@/features/products/product-api'
 import ProductDetailActions from '@/features/products/ProductDetailActions'
@@ -62,15 +62,14 @@ function formatReviewDate(value: string) {
 }
 
 export default async function ProductDetailPage({ params }: PageProps) {
-  const [product, products, vouchers] = await Promise.all([
+  const [product, vouchers] = await Promise.all([
     getStorefrontProduct(params.slug),
-    getStorefrontProducts(),
     getStorefrontVouchers(),
   ])
 
   if (!product) notFound()
 
-  const related = products.filter((item) => item.id !== product.id).slice(0, 4)
+  const related = await getRelatedStorefrontProducts(product.id, 4)
   const images = product.images.length > 0 ? product.images : product.imageUrl ? [product.imageUrl] : []
   const applicableVouchers = vouchers.filter((voucher) => (
     voucher.productIds.length === 0 || voucher.productIds.includes(product.id)

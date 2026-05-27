@@ -22,6 +22,7 @@ import checkoutRoutes from '../features/checkout/routes/checkout.routes';
 import customerRoutes from '../features/customers/routes/customer.routes';
 import orderRoutes from '../features/orders/routes/order.routes';
 import metalPriceRoutes from '../features/metal-prices/routes/metal-price.routes';
+import paymentMethodRoutes from '../features/payment-methods/routes/payment-method.routes';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -114,6 +115,7 @@ app.use('/api/checkout', checkoutRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/metal-prices', metalPriceRoutes);
+app.use('/api/payment-methods', paymentMethodRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────────────────────────
 app.use((_req, res) => {

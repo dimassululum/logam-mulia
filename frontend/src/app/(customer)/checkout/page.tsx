@@ -29,6 +29,10 @@ import {
 } from '@/features/cart/cart-storage'
 import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
 import { createCustomerOrder } from '@/features/orders/order-api'
+import {
+  fetchPublicPaymentMethods,
+  type PaymentMethodRecord,
+} from '@/features/payment-methods/payment-method-api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface EkspedisiOption {
@@ -64,13 +68,6 @@ const EMPTY_ADDRESS: GuestCheckoutAddress = {
   province: '',
   postalCode: '',
 }
-
-const BANKS = [
-  { id: 'bri',     name: 'BRI Virtual Account',     label: 'BRI' },
-  { id: 'bca',     name: 'BCA Virtual Account',     label: 'BCA' },
-  { id: 'mandiri', name: 'Mandiri Virtual Account', label: 'MANDIRI' },
-  { id: 'bni',     name: 'BNI Virtual Account',     label: 'BNI' },
-]
 
 const ZERO_EKSPEDISI_OPTIONS: EkspedisiOption[] = [
   { id: 'jne-free', name: 'JNE', time: '-', price: 0, courier: 'JNE', service: 'Reguler' },
@@ -120,6 +117,10 @@ export default function CheckoutPage() {
   const [isLoadingDestinations, setIsLoadingDestinations] = useState(false)
   const [destinationError, setDestinationError] = useState('')
   const [addressFormError, setAddressFormError] = useState('')
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRecord[]>([])
+  const [selectedPaymentMethodCode, setSelectedPaymentMethodCode] = useState('')
+  const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(false)
+  const [paymentMethodError, setPaymentMethodError] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -141,6 +142,36 @@ export default function CheckoutPage() {
     }
 
     loadBoutiques()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+
+    async function loadPaymentMethods() {
+      setIsLoadingPaymentMethods(true)
+      setPaymentMethodError('')
+      try {
+        const methods = await fetchPublicPaymentMethods()
+        if (!alive) return
+        setPaymentMethods(methods)
+        setSelectedPaymentMethodCode((current) => {
+          if (current && methods.some((method) => method.code === current)) return current
+          return methods[0]?.code ?? ''
+        })
+      } catch (error) {
+        if (!alive) return
+        setPaymentMethods([])
+        setSelectedPaymentMethodCode('')
+        setPaymentMethodError(error instanceof Error ? error.message : 'Gagal memuat metode pembayaran.')
+      } finally {
+        if (alive) setIsLoadingPaymentMethods(false)
+      }
+    }
+
+    loadPaymentMethods()
     return () => {
       alive = false
     }
@@ -445,11 +476,13 @@ export default function CheckoutPage() {
   const discount = calculateVoucherDiscount(checkoutVoucher, subtotal)
   const total = Math.max(0, subtotal + shippingFee - discount)
   const needsKtpUpload = !guestProfile?.hasKtp && !ktpFile
+  const selectedPaymentMethod = paymentMethods.find((method) => method.code === selectedPaymentMethodCode) ?? null
+  const hasPaymentMethod = Boolean(selectedPaymentMethod)
   const canPay =
-    subtotal > 0 && ordererName.trim() && !needsKtpUpload && deliveryType === 'ekspedisi'
+    subtotal > 0 && ordererName.trim() && !needsKtpUpload && hasPaymentMethod && deliveryType === 'ekspedisi'
       ? Boolean(selectedAddress && selectedEkspedisi)
       : deliveryType === 'butik'
-        ? subtotal > 0 && ordererName.trim() && !needsKtpUpload && Boolean(selectedButik)
+        ? subtotal > 0 && ordererName.trim() && !needsKtpUpload && hasPaymentMethod && Boolean(selectedButik)
         : false
 
   const filteredButik = butikOptions.filter(
@@ -460,7 +493,7 @@ export default function CheckoutPage() {
   )
 
   async function handlePay() {
-    if (!canPay || !guestProfile) return
+    if (!canPay || !guestProfile || !selectedPaymentMethod) return
 
     setIsSavingProfile(true)
     setCheckoutError('')
@@ -482,6 +515,7 @@ export default function CheckoutPage() {
         selectedAddress,
         selectedEkspedisi,
         selectedButik,
+        paymentMethodCode: selectedPaymentMethod.code,
         voucher: checkoutVoucher,
         discountAmount: discount,
       })
@@ -698,48 +732,52 @@ export default function CheckoutPage() {
         {/* ── Payment Method ───────────────────────────────────────────── */}
         <section className="bg-white rounded-xl border border-navy-200 p-6 shadow-elevation-low">
           <h2 className="font-heading text-xl font-bold text-navy-900 mb-6">Metode Pembayaran</h2>
-          <div className="mb-5">
-            <RadioCard selected onClick={() => undefined}>
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 text-gold-700">
-                  <QrCode className="h-6 w-6" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-navy-900">QRIS Manual</span>
-                    <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
-                      Tersedia
-                    </span>
+          {isLoadingPaymentMethods ? (
+            <div className="rounded-xl border border-navy-100 bg-navy-50 p-4 text-sm font-medium text-navy-600">
+              Memuat metode pembayaran...
+            </div>
+          ) : paymentMethodError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-600">
+              {paymentMethodError}
+            </div>
+          ) : paymentMethods.length === 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-semibold text-amber-800">Metode pembayaran belum tersedia.</p>
+              <p className="mt-1 text-sm text-amber-700">Silakan hubungi admin untuk bantuan checkout.</p>
+              <a href={waLink} target="_blank" rel="noreferrer" className="mt-4 inline-flex">
+                <Button type="button" variant="secondary" size="sm">
+                  <HeadphonesIcon className="h-4 w-4" />
+                  Hubungi Admin
+                </Button>
+              </a>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {paymentMethods.map((method) => (
+                <RadioCard
+                  key={method.code}
+                  id={`payment-${method.code}`}
+                  selected={selectedPaymentMethodCode === method.code}
+                  onClick={() => setSelectedPaymentMethodCode(method.code)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 text-gold-700">
+                      {method.category === 'QRIS' ? <QrCode className="h-6 w-6" /> : <CreditCard className="h-6 w-6" />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-navy-900">{method.label}</span>
+                        <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
+                          Tersedia
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-navy-600">{method.description}</p>
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm text-navy-600">Bayar dengan scan QRIS, lalu upload bukti pembayaran untuk diverifikasi admin.</p>
-                </div>
-              </div>
-            </RadioCard>
-          </div>
-
-          <p className="font-bold text-navy-500 mb-4 text-sm uppercase tracking-wider">Virtual Account</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {BANKS.map((bank) => (
-              <RadioCard
-                key={bank.id}
-                id={`bank-${bank.id}`}
-                selected={false}
-                onClick={() => undefined}
-                className="pointer-events-none opacity-65"
-              >
-                <div className="flex items-center gap-3">
-                  <CreditCard className="h-5 w-5 flex-shrink-0 text-navy-300" />
-                  <div className="w-14 h-8 bg-surface rounded border border-navy-100 flex items-center justify-center text-[10px] font-bold text-navy-600 flex-shrink-0">
-                    {bank.label}
-                  </div>
-                  <span className="min-w-0 flex-1 font-bold text-navy-700 text-sm">{bank.name}</span>
-                  <span className="rounded-full border border-navy-200 bg-navy-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-navy-500">
-                    Coming Soon
-                  </span>
-                </div>
-              </RadioCard>
-            ))}
-          </div>
+                </RadioCard>
+              ))}
+            </div>
+          )}
         </section>
       </main>
 
