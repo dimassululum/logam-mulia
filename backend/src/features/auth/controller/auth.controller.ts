@@ -56,3 +56,8 @@ export async function getMe(req: Request, res: Response): Promise<void> {
   const user = await authService.getMe(req.user!.userId);
   sendSuccess({ res, data: user });
 }
+
+export async function updateProfile(req: Request, res: Response): Promise<void> {
+  const user = await authService.updateProfile(req.user!.userId, req.body);
+  sendSuccess({ res, message: 'Profil berhasil diperbarui', data: user });
+}

@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import type { Product } from '@/core/types'
 import { resolvePublicApiBaseUrl, resolvePublicAssetUrl } from '@/core/lib/public-url'
+import { mapStorefrontVoucher, type StorefrontVoucher } from './voucher-pricing'
 
 const API_URL = resolvePublicApiBaseUrl()
 
@@ -20,16 +21,7 @@ export interface ProductReview {
   createdAt: string
 }
 
-export interface StorefrontVoucher {
-  id: string
-  code: string
-  discountType: 'PERCENTAGE' | 'FIXED'
-  discountValue: number
-  minPurchase: number
-  maxDiscount: number | null
-  expiresAt: string | null
-  productIds: string[]
-}
+export type { StorefrontVoucher }
 
 interface StorefrontProductListOptions {
   limit?: number
@@ -125,15 +117,6 @@ export const getRelatedStorefrontProducts = cache(async (currentProductId: strin
 })
 
 export const getStorefrontVouchers = cache(async () => {
-  const vouchers = await fetchApi<any[]>('/vouchers/public?limit=20', [])
-  return vouchers.map((voucher) => ({
-    id: voucher.id,
-    code: voucher.code,
-    discountType: voucher.discountType,
-    discountValue: toNumber(voucher.discountValue),
-    minPurchase: toNumber(voucher.minPurchase),
-    maxDiscount: voucher.maxDiscount === null || voucher.maxDiscount === undefined ? null : toNumber(voucher.maxDiscount),
-    expiresAt: voucher.expiresAt || null,
-    productIds: Array.isArray(voucher.products) ? voucher.products.map((product: any) => product.id).filter(Boolean) : [],
-  })) as StorefrontVoucher[]
+  const vouchers = await fetchApi<any[]>('/vouchers/public?limit=100', [])
+  return vouchers.map(mapStorefrontVoucher)
 })

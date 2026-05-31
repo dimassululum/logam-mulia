@@ -11,7 +11,7 @@ import {
   NotFoundError,
   ForbiddenError,
 } from '../../../core/utils/errors';
-import type { RegisterInput, LoginInput, ForgotPasswordInput, ResetPasswordInput } from '../schema/auth.schema';
+import type { RegisterInput, LoginInput, ForgotPasswordInput, ResetPasswordInput, UpdateProfileInput } from '../schema/auth.schema';
 
 const SALT_ROUNDS = 12;
 const RESET_PASSWORD_TOKEN_BYTES = 32;
@@ -227,6 +227,29 @@ export async function getMe(userId: string) {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+export async function updateProfile(userId: string, input: UpdateProfileInput) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: {
+      name: input.name.trim(),
+      phone: input.phone?.trim() || null,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      isKycVerified: true,
+      ktpUrl: true,
+      createdAt: true,
+      addresses: {
+        orderBy: { isDefault: 'desc' },
+      },
+    },
+  });
+}
+
 function generateTokens(userId: string, role: string): AuthTokens {
   return {
     accessToken: signAccessToken({ userId, role }),

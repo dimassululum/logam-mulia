@@ -1,0 +1,102 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your env file}
+      POSTGRES_DB: ${POSTGRES_DB:-antam_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - logam-mulia-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-antam_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 5000
+      PUBLIC_API_URL: ${PUBLIC_API_URL:?Set PUBLIC_API_URL in your env file}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in your env file}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in your env file}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in your env file}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+      RAJAONGKIR_API_KEY: ${RAJAONGKIR_API_KEY:-}
+      RAJAONGKIR_BASE_URL: ${RAJAONGKIR_BASE_URL:-https://rajaongkir.komerce.id/api/v1}
+      RAJAONGKIR_ORIGIN_ID: ${RAJAONGKIR_ORIGIN_ID:-}
+      RAJAONGKIR_ORIGIN_SEARCH: ${RAJAONGKIR_ORIGIN_SEARCH:-Jakarta Timur}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@logam-mulia-antam.com}
+      ADMIN_ORDER_NOTIFICATION_EMAIL: ${ADMIN_ORDER_NOTIFICATION_EMAIL:-}
+      FRONTEND_URL: ${FRONTEND_URL:?Set FRONTEND_URL in your env file}
+      FRONTEND_URLS: ${FRONTEND_URLS:-}
+      UPLOAD_DIR: /app/uploads
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-10}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-10000}
+      SMTP_TLS_REJECT_UNAUTHORIZED: ${SMTP_TLS_REJECT_UNAUTHORIZED:-}
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - logam-mulia-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL in your env file}
+        INTERNAL_API_ORIGIN: ${INTERNAL_API_ORIGIN:-http://backend:5000}
+    restart: always
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL in your env file}
+      INTERNAL_API_ORIGIN: ${INTERNAL_API_ORIGIN:-http://backend:5000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - logam-mulia-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local
+
+networks:
+  logam-mulia-network:
+    driver: bridge

@@ -27,6 +27,7 @@ import {
   readCheckoutItems,
   readCheckoutVoucher,
 } from '@/features/cart/cart-storage'
+import { mapStorefrontVoucher, summarizeApplicableVouchers, type StorefrontVoucher } from '@/features/products/voucher-pricing'
 import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
 import { createCustomerOrder } from '@/features/orders/order-api'
 import {
@@ -97,7 +98,8 @@ export default function CheckoutPage() {
   const [selectedAddress, setSelectedAddress] = useState<GuestCheckoutAddress | null>(null)
   const [addressForm, setAddressForm] = useState<GuestCheckoutAddress>(EMPTY_ADDRESS)
   const [checkoutItems, setCheckoutItems] = useState<LocalCartItem[]>([])
-  const [checkoutVoucher, setCheckoutVoucher] = useState<ClaimedVoucher | null>(null)
+  const [savedCheckoutVoucher, setSavedCheckoutVoucher] = useState<ClaimedVoucher | null>(null)
+  const [vouchers, setVouchers] = useState<StorefrontVoucher[]>([])
   const [ktpFile, setKtpFile] = useState<File | null>(null)
   const [ktpFileError, setKtpFileError] = useState('')
   const [isSavingProfile, setIsSavingProfile] = useState(false)
@@ -180,6 +182,17 @@ export default function CheckoutPage() {
   useEffect(() => {
     let alive = true
 
+    async function loadVouchers() {
+      try {
+        const response = await fetch(`${API_URL}/vouchers/public?limit=100`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!alive || !response.ok) return
+        setVouchers(Array.isArray(json.data) ? json.data.map(mapStorefrontVoucher) : [])
+      } catch (error) {
+        console.error('Error fetching public vouchers', error)
+      }
+    }
+
     async function loadCustomerProfile() {
       if (!localStorage.getItem('access_token')) {
         router.replace(`/login?redirect=${encodeURIComponent(`/checkout${window.location.search}`)}`)
@@ -225,12 +238,13 @@ export default function CheckoutPage() {
       }
     }
 
+    loadVouchers()
     loadCustomerProfile()
 
     const storedCheckoutItems = readCheckoutItems()
     const checkedCartItems = readCartItems().filter((item) => item.checked)
     setCheckoutItems(storedCheckoutItems.length > 0 ? storedCheckoutItems : checkedCartItems)
-    setCheckoutVoucher(readCheckoutVoucher())
+    setSavedCheckoutVoucher(readCheckoutVoucher())
 
     return () => {
       alive = false
@@ -473,7 +487,15 @@ export default function CheckoutPage() {
 
   const shippingFee = deliveryType === 'ekspedisi' && selectedEkspedisi ? selectedEkspedisi.price : 0
   const subtotal = checkoutItems.reduce((sum, item) => sum + item.product.totalPrice * item.quantity, 0)
-  const discount = calculateVoucherDiscount(checkoutVoucher, subtotal)
+  const voucherSummary = summarizeApplicableVouchers(vouchers, checkoutItems.map((item) => ({
+    productId: item.product.id,
+    price: item.product.totalPrice,
+    quantity: item.quantity,
+  })))
+  const fallbackDiscount = calculateVoucherDiscount(savedCheckoutVoucher, subtotal)
+  const checkoutVoucher = voucherSummary.appliedVouchers[0]?.voucher ?? savedCheckoutVoucher
+  const appliedVoucherCount = voucherSummary.appliedVouchers.length
+  const discount = voucherSummary.discountAmount > 0 ? voucherSummary.discountAmount : fallbackDiscount
   const total = Math.max(0, subtotal + shippingFee - discount)
   const needsKtpUpload = !guestProfile?.hasKtp && !ktpFile
   const selectedPaymentMethod = paymentMethods.find((method) => method.code === selectedPaymentMethodCode) ?? null
@@ -828,7 +850,7 @@ export default function CheckoutPage() {
         isOpen={showButikModal}
         onClose={() => setShowButikModal(false)}
         title="Pilih Butik LM"
-        size="md"
+        size="lg"
       >
         <div className="flex flex-col gap-4">
           <Input
@@ -837,16 +859,27 @@ export default function CheckoutPage() {
             onChange={(e) => setButikSearch(e.target.value)}
             leftIcon={<Search className="w-4 h-4" />}
           />
-          <div className="flex flex-col gap-3 max-h-[50vh] overflow-y-auto -mx-1 px-1">
+          <div className="flex flex-col gap-3">
             {filteredButik.map((opt) => (
               <RadioCard
                 key={opt.id}
                 selected={selectedButik?.id === opt.id}
                 onClick={() => handleSelectButik(opt)}
+                className="p-3.5"
               >
-                <p className="font-bold text-navy-900">{opt.name}</p>
-                <p className="text-sm text-navy-500 mt-1">{opt.city}</p>
-                <p className="text-sm text-navy-600 mt-2">{opt.address}</p>
+                <div className="flex items-start gap-3">
+                  <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-gold-600" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold text-navy-900">{opt.name}</p>
+                      <span className="rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                        Gratis biaya
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-navy-500 mt-1">{opt.city}</p>
+                    <p className="text-sm text-navy-600 mt-1 leading-5">{opt.address}</p>
+                  </div>
+                </div>
               </RadioCard>
             ))}
           </div>
@@ -893,7 +926,7 @@ export default function CheckoutPage() {
         isOpen={showAddressFormModal}
         onClose={() => setShowAddressFormModal(false)}
         title="Alamat Baru"
-        size="md"
+        size="lg"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1069,12 +1102,14 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          <Button type="button" size="lg" fullWidth onClick={handleSaveAddress}>
-            Simpan Alamat
-          </Button>
           {addressFormError ? (
             <p className="text-sm font-medium text-red-500">{addressFormError}</p>
           ) : null}
+          <div className="sticky bottom-0 -mx-4 -mb-4 bg-white px-4 pb-4 pt-3 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-6">
+            <Button type="button" size="lg" fullWidth onClick={handleSaveAddress}>
+              Simpan Alamat
+            </Button>
+          </div>
         </div>
       </Modal>
 
@@ -1094,8 +1129,10 @@ export default function CheckoutPage() {
               </div>
             ))}
             {discount > 0 ? (
-              <div className="flex justify-between text-green-600 font-medium text-sm">
-                <span>Potongan Voucher{checkoutVoucher ? ` (${checkoutVoucher.code})` : ''}</span><span>-{formatRupiah(discount)}</span>
+              <div className="flex justify-between text-sm font-semibold text-[#2E7D32]">
+                <span>
+                  Hemat Voucher{appliedVoucherCount > 1 ? ` (${appliedVoucherCount} voucher)` : checkoutVoucher ? ` (${checkoutVoucher.code})` : ''}
+                </span><span>-{formatRupiah(discount)}</span>
               </div>
             ) : null}
           </div>

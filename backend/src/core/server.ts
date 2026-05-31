@@ -87,10 +87,14 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ─── Static Files (must be before helmet to allow cross-origin) ────────────
-app.use('/uploads', (req, res, next) => {
+const uploadsStatic = express.static(path.resolve(env.UPLOAD_DIR));
+const allowCrossOriginUploads: express.RequestHandler = (_req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
-}, express.static(path.resolve(env.UPLOAD_DIR)));
+};
+
+app.use('/uploads', allowCrossOriginUploads, uploadsStatic);
+app.use('/api/uploads', allowCrossOriginUploads, uploadsStatic);
 
 // ─── Health Check ──────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

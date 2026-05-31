@@ -1,0 +1,23 @@
+services:
+  backend:
+    ports:
+      - "${BACKEND_BIND_ADDR:-127.0.0.1}:${BACKEND_HOST_PORT:-5000}:5000"
+
+  frontend:
+    ports:
+      - "${FRONTEND_BIND_ADDR:-127.0.0.1}:${FRONTEND_HOST_PORT:-4000}:3000"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ${CLOUDFLARED_CONFIG_FILE:-./cloudflared/config.prod.yml}:/etc/cloudflared/config.yml:ro
+      - ${CLOUDFLARED_CREDENTIALS_FILE:-./cloudflared/prod-credentials.json}:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    networks:
+      - logam-mulia-network

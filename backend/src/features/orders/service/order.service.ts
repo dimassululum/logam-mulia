@@ -1,4 +1,4 @@
-import { OrderStatus, Prisma, Role } from '@prisma/client';
+import { DiscountType, OrderStatus, Prisma, Role } from '@prisma/client';
 import { prisma } from '../../../core/config/database';
 import { env } from '../../../core/config/env';
 import { sendEmail } from '../../../core/utils/email';
@@ -73,6 +73,91 @@ function formatRupiah(value: number) {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function calculateVoucherDiscount(
+  discountType: DiscountType,
+  discountValue: Prisma.Decimal,
+  subtotal: number,
+  maxDiscount?: Prisma.Decimal | null
+) {
+  if (subtotal <= 0) return 0;
+
+  if (discountType === DiscountType.PERCENTAGE) {
+    const rawDiscount = subtotal * (toMoney(discountValue) / 100);
+    const cap = maxDiscount ? toMoney(maxDiscount) : rawDiscount;
+    return roundMoney(Math.min(rawDiscount, cap, subtotal));
+  }
+
+  return roundMoney(Math.min(toMoney(discountValue), subtotal));
+}
+
+type OrderTx = Omit<
+  Prisma.TransactionClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
+
+async function findAutomaticVouchers(tx: OrderTx, userId: string, items: CreateOrderInput['items']) {
+  const now = new Date();
+  const productIds = Array.from(new Set(items.map((item) => item.productId)));
+  const vouchers = await tx.voucher.findMany({
+    where: {
+      isActive: true,
+      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+      AND: [
+        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+        {
+          OR: [
+            { products: { none: {} } },
+            { products: { some: { id: { in: productIds } } } },
+          ],
+        },
+      ],
+    },
+    include: {
+      products: { select: { id: true } },
+    },
+    orderBy: [{ expiresAt: 'asc' }, { code: 'asc' }],
+  });
+
+  const appliedVouchers: { voucher: typeof vouchers[number]; discountAmount: number }[] = [];
+
+  for (const voucher of vouchers) {
+    if (voucher.usageLimit !== null && voucher.usageCount >= voucher.usageLimit) continue;
+
+    const eligibleProductIds = new Set(voucher.products.map((product) => product.id));
+    const eligibleSubtotal = items.reduce((sum, item) => {
+      if (eligibleProductIds.size > 0 && !eligibleProductIds.has(item.productId)) return sum;
+      return sum + item.priceAtPurchase * item.quantity;
+    }, 0);
+
+    if (eligibleSubtotal < toMoney(voucher.minPurchase)) continue;
+
+    const userUsageCount = await tx.voucherUsage.count({
+      where: {
+        voucherId: voucher.id,
+        userId,
+      },
+    });
+
+    if (userUsageCount >= voucher.perUserLimit) continue;
+
+    const discountAmount = calculateVoucherDiscount(
+      voucher.discountType,
+      voucher.discountValue,
+      eligibleSubtotal,
+      voucher.maxDiscount
+    );
+
+    if (discountAmount <= 0) continue;
+    appliedVouchers.push({ voucher, discountAmount });
+  }
+
+  return appliedVouchers;
 }
 
 function escapeHtml(value: string | number | null | undefined) {
@@ -574,48 +659,73 @@ export async function createOrder(input: CreateOrderInput) {
   const paymentMethod = await resolveActivePaymentMethodForOrder(input.paymentMethodCode);
 
   const subtotal = input.items.reduce((sum, item) => sum + item.priceAtPurchase * item.quantity, 0);
-  const grandTotal = Math.max(0, subtotal + input.shippingCost - input.discountAmount);
   const id = nextOrderId();
 
-  const order = await prisma.order.create({
-    data: {
-      id,
-      userId: user.id,
-      status: OrderStatus.PENDING,
-      totalAmount: subtotal,
-      shippingCost: input.shippingCost,
-      discountAmount: input.discountAmount,
-      grandTotal,
-      paymentMethodCode: paymentMethod.code,
-      paymentMethod: paymentMethod.label,
-      shippingAddress: input.shippingAddress,
-      shippingCity: input.deliveryType === 'butik' ? input.boutiqueName || input.shippingCity || '-' : input.shippingCity || '-',
-      shippingProvince: input.shippingProvince || null,
-      shippingDistrict: input.shippingDistrict || null,
-      shippingVillage: input.shippingVillage || null,
-      shippingPostalCode: input.shippingPostalCode || null,
-      shippingCourier: input.deliveryType === 'butik' ? 'SELFPICKUP' : input.shippingCourier || null,
-      shippingService: input.shippingService,
-      voucherId: input.voucherId || undefined,
-      ktpImageUrl: user.ktpUrl,
-      items: {
-        create: input.items.map((item) => ({
-          productId: item.productId,
-          productName: item.productName,
-          productImage: item.productImage || null,
-          priceAtPurchase: item.priceAtPurchase,
-          quantity: item.quantity,
-          subtotal: item.priceAtPurchase * item.quantity,
-        })),
-      },
-      statusLogs: {
-        create: {
-          status: OrderStatus.PENDING,
-          note: `Pesanan dibuat dari checkout customer dengan metode ${paymentMethod.label}.`,
+  const order = await prisma.$transaction(async (tx) => {
+    const automaticVouchers = await findAutomaticVouchers(tx, user.id, input.items);
+    const discountAmount = Math.min(
+      subtotal,
+      roundMoney(automaticVouchers.reduce((sum, applied) => sum + applied.discountAmount, 0))
+    );
+    const grandTotal = Math.max(0, subtotal + input.shippingCost - discountAmount);
+
+    const createdOrder = await tx.order.create({
+      data: {
+        id,
+        userId: user.id,
+        status: OrderStatus.PENDING,
+        totalAmount: subtotal,
+        shippingCost: input.shippingCost,
+        discountAmount,
+        grandTotal,
+        paymentMethodCode: paymentMethod.code,
+        paymentMethod: paymentMethod.label,
+        shippingAddress: input.shippingAddress,
+        shippingCity: input.deliveryType === 'butik' ? input.boutiqueName || input.shippingCity || '-' : input.shippingCity || '-',
+        shippingProvince: input.shippingProvince || null,
+        shippingDistrict: input.shippingDistrict || null,
+        shippingVillage: input.shippingVillage || null,
+        shippingPostalCode: input.shippingPostalCode || null,
+        shippingCourier: input.deliveryType === 'butik' ? 'SELFPICKUP' : input.shippingCourier || null,
+        shippingService: input.shippingService,
+        voucherId: automaticVouchers[0]?.voucher.id || undefined,
+        ktpImageUrl: user.ktpUrl,
+        items: {
+          create: input.items.map((item) => ({
+            productId: item.productId,
+            productName: item.productName,
+            productImage: item.productImage || null,
+            priceAtPurchase: item.priceAtPurchase,
+            quantity: item.quantity,
+            subtotal: item.priceAtPurchase * item.quantity,
+          })),
+        },
+        statusLogs: {
+          create: {
+            status: OrderStatus.PENDING,
+            note: `Pesanan dibuat dari checkout customer dengan metode ${paymentMethod.label}.`,
+          },
         },
       },
-    },
-    include: orderInclude,
+      include: orderInclude,
+    });
+
+    for (const automaticVoucher of automaticVouchers) {
+      await tx.voucherUsage.create({
+        data: {
+          voucherId: automaticVoucher.voucher.id,
+          userId: user.id,
+          orderId: createdOrder.id,
+        },
+      });
+
+      await tx.voucher.update({
+        where: { id: automaticVoucher.voucher.id },
+        data: { usageCount: { increment: 1 } },
+      });
+    }
+
+    return createdOrder;
   });
 
   const mappedOrder = mapOrder(order);

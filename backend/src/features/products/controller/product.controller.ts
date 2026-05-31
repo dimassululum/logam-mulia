@@ -5,7 +5,7 @@ import { buildUploadedFileUrl } from '../../../core/utils/public-url';
 
 export async function getAllProducts(req: Request, res: Response) {
   const { page, limit } = parsePagination(req.query as any);
-  const { categoryId, search, isActive } = req.query;
+  const { categoryId, search, isActive, sort } = req.query;
 
   const result = await productService.getAllProducts({
     page,
@@ -13,6 +13,7 @@ export async function getAllProducts(req: Request, res: Response) {
     categoryId: categoryId as string,
     search: search as string,
     isActive: isActive !== undefined ? isActive === 'true' : undefined,
+    sort: sort === 'sold-desc' ? 'sold-desc' : undefined,
   });
 
   sendSuccess({

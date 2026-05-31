@@ -1,0 +1,13 @@
+tunnel: cfb726d5-2d1e-496c-8870-ef8225dd20f0
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: staging.logam-mulia-antam.com
+    path: ^/api
+    service: http://backend:5000
+  - hostname: staging.logam-mulia-antam.com
+    path: ^/uploads
+    service: http://backend:5000
+  - hostname: staging.logam-mulia-antam.com
+    service: http://frontend:3000
+  - service: http_status:404

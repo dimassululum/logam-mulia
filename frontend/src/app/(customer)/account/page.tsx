@@ -7,10 +7,11 @@ import Card from '@/shared/ui/Card'
 import { ChevronRight, MapPin, Headset, LogOut, User } from 'lucide-react'
 import { apiClient } from '@/core/lib/api-client'
 import { MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { fetchAccountProfile, type AccountProfile } from '@/features/account/account-api'
 
 export default function AccountPage() {
   const router = useRouter()
-  const [user, setUser] = useState<{ name: string; email: string; phone?: string | null } | null>(null)
+  const [user, setUser] = useState<AccountProfile | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -22,8 +23,8 @@ export default function AccountPage() {
       }
 
       try {
-        const { data } = await apiClient.get('/auth/me')
-        if (alive) setUser(data.data)
+        const data = await fetchAccountProfile()
+        if (alive) setUser(data)
       } catch {
         if (alive) router.replace('/login?redirect=/account')
       }
@@ -53,6 +54,8 @@ export default function AccountPage() {
     } finally {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
+      localStorage.removeItem('user_name')
+      localStorage.removeItem('user_email')
       document.cookie = `${MOCK_AUTH_COOKIES.role}=; path=/; max-age=0; SameSite=Lax`
       document.cookie = `${MOCK_AUTH_COOKIES.name}=; path=/; max-age=0; SameSite=Lax`
       document.cookie = `${MOCK_AUTH_COOKIES.email}=; path=/; max-age=0; SameSite=Lax`

@@ -1,71 +1,121 @@
+'use client'
+
 import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AppBar from '@/shared/ui/AppBar'
 import Button from '@/shared/ui/Button'
-import { MoreVertical, Camera, Settings } from 'lucide-react'
+import Card from '@/shared/ui/Card'
+import { CheckCircle2, Mail, Phone, Settings, ShieldCheck, User } from 'lucide-react'
+import { fetchAccountProfile, type AccountProfile } from '@/features/account/account-api'
 
 export default function ProfilePage() {
+  const router = useRouter()
+  const [profile, setProfile] = useState<AccountProfile | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!localStorage.getItem('access_token')) {
+      router.replace('/login?redirect=/account/profile')
+      return
+    }
+
+    let alive = true
+
+    async function loadProfile() {
+      try {
+        const data = await fetchAccountProfile()
+        if (alive) setProfile(data)
+      } catch {
+        if (alive) setError('Gagal memuat profil. Silakan login ulang.')
+      } finally {
+        if (alive) setIsLoading(false)
+      }
+    }
+
+    loadProfile()
+    return () => {
+      alive = false
+    }
+  }, [router])
+
+  const initials = useMemo(() => {
+    const name = profile?.name || 'Customer'
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((segment) => segment[0]?.toUpperCase())
+      .join('') || 'CU'
+  }, [profile?.name])
+
   return (
-    <div className="min-h-screen bg-navy-50 flex flex-col font-body text-navy-900 selection:bg-gold-400 selection:text-navy-900">
-      <AppBar 
-        title="Profil Saya" 
-        rightSlot={
-          <button className="text-gold-400 hover:text-gold-300 transition-colors">
-            <MoreVertical className="w-6 h-6" />
-          </button>
-        } 
-      />
-      
-      <main className="flex-1 w-full max-w-container-max mx-auto px-margin-mobile md:px-margin-desktop py-stack-md md:py-stack-lg flex flex-col items-center">
-        
-        {/* Profile Avatar Section */}
-        <section className="flex flex-col items-center w-full max-w-md mb-8">
-          <div className="w-28 h-28 md:w-32 md:h-32 rounded-full bg-gold-400 text-navy-900 flex items-center justify-center text-display-md shadow-sm border border-navy-500/30 ring-4 ring-white mb-stack-sm relative">
-            BS
-            {/* Edit indicator */}
-            <button className="absolute bottom-0 right-0 w-10 h-10 bg-gold-600 text-white rounded-full border-2 border-white shadow-sm flex items-center justify-center hover:-translate-y-0.5 transition-transform duration-300">
-              <Camera className="w-5 h-5" />
-            </button>
-          </div>
-          <h2 className="text-headline-sm text-navy-900 mt-2">Budi Santoso</h2>
-        </section>
+    <div className="min-h-screen bg-navy-50 pb-28 text-navy-900">
+      <AppBar title="Profil Saya" />
 
-        {/* Personal Information Card */}
-        <section className="w-full max-w-md bg-white border border-navy-300 rounded-xl shadow-elevation-low overflow-hidden">
-          {/* Section Header */}
-          <div className="px-6 py-4 border-b border-navy-300 bg-navy-50/50">
-            <h3 className="text-label-md text-navy-600 uppercase tracking-widest">Informasi Pribadi</h3>
-          </div>
-          
-          {/* Details List */}
-          <div className="flex flex-col">
-            <div className="px-6 py-4 flex flex-col gap-1 border-b border-navy-300/50 last:border-0 hover:bg-navy-100/50 transition-colors duration-300">
-              <span className="text-label-md text-navy-500">Nama Lengkap</span>
-              <span className="text-body-lg text-navy-900 tracking-tight">Budi Santoso</span>
-            </div>
-            
-            <div className="px-6 py-4 flex flex-col gap-1 border-b border-navy-300/50 last:border-0 hover:bg-navy-100/50 transition-colors duration-300">
-              <span className="text-label-md text-navy-500">Alamat Email</span>
-              <span className="text-body-lg text-navy-900 tracking-tight">budi.santoso@email.com</span>
-            </div>
-            
-            <div className="px-6 py-4 flex flex-col gap-1 border-b border-navy-300/50 last:border-0 hover:bg-navy-100/50 transition-colors duration-300">
-              <span className="text-label-md text-navy-500">No. Handphone</span>
-              <span className="text-body-lg text-navy-900 tracking-tight">+62 812 3456 7890</span>
-            </div>
-          </div>
-        </section>
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+        {isLoading ? (
+          <Card padding="md" className="text-sm text-navy-600">Memuat profil...</Card>
+        ) : error ? (
+          <Card padding="md" className="border-red-100 bg-red-50 text-sm text-red-700">{error}</Card>
+        ) : profile ? (
+          <>
+            <section className="rounded-xl border border-navy-800 bg-navy-900 p-5 text-white shadow-elevation-low">
+              <div className="flex items-center gap-4">
+                <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full bg-gold-400 text-2xl font-bold text-navy-900">
+                  {initials}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-heading text-xl font-bold text-white">{profile.name}</h2>
+                  <p className="mt-1 truncate text-sm text-navy-300">{profile.email}</p>
+                  <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-gold-300">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {profile.isKycVerified || profile.ktpUrl ? 'KTP tersimpan' : 'KTP belum tersimpan'}
+                  </div>
+                </div>
+              </div>
+            </section>
 
-        {/* Action Section */}
-        <section className="w-full max-w-md mt-stack-lg">
-          <Link href="/account/profile/edit" className="w-full">
-            <Button variant="primary" size="lg" fullWidth className="uppercase tracking-wider">
-              <Settings className="w-5 h-5 mr-2" />
-              Ubah Profil
-            </Button>
-          </Link>
-        </section>
-        
+            <section className="rounded-xl border border-navy-200 bg-white shadow-elevation-low">
+              <div className="border-b border-navy-100 px-5 py-4">
+                <h3 className="font-bold text-navy-900">Informasi Pribadi</h3>
+              </div>
+              <div className="divide-y divide-navy-100">
+                <ProfileRow icon={<User className="h-4 w-4" />} label="Nama Lengkap" value={profile.name} />
+                <ProfileRow icon={<Mail className="h-4 w-4" />} label="Alamat Email" value={profile.email} />
+                <ProfileRow icon={<Phone className="h-4 w-4" />} label="No. Handphone" value={profile.phone || 'Belum diisi'} />
+                <ProfileRow
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  label="Alamat Tersimpan"
+                  value={`${profile.addresses?.length ?? 0} alamat`}
+                />
+              </div>
+            </section>
+
+            <Link href="/account/profile/edit">
+              <Button variant="primary" size="lg" fullWidth>
+                <Settings className="h-5 w-5" />
+                Ubah Profil
+              </Button>
+            </Link>
+          </>
+        ) : null}
       </main>
+    </div>
+  )
+}
+
+function ProfileRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3 px-5 py-4">
+      <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gold-50 text-gold-700">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase text-navy-500">{label}</p>
+        <p className="mt-1 break-words font-semibold text-navy-900">{value}</p>
+      </div>
     </div>
   )
 }

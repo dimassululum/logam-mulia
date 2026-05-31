@@ -1,6 +1,7 @@
 import { apiClient } from '@/core/lib/api-client'
 import type { OrderStatus } from '@/core/types'
-import type { LocalCartItem, ClaimedVoucher } from '@/features/cart/cart-storage'
+import type { LocalCartItem } from '@/features/cart/cart-storage'
+import type { StorefrontVoucher } from '@/features/products/voucher-pricing'
 import type { GuestCheckoutAddress, GuestCheckoutProfile } from '@/features/checkout/guestCheckout'
 import type { AdminOrderDetailRecord, AdminOrderRecord } from '@/features/admin/admin-management-data'
 import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
@@ -37,7 +38,7 @@ interface CreateOrderInput {
   selectedEkspedisi: { name: string; time: string; price: number; courier?: string; service?: string } | null
   selectedButik: { name: string; city: string; address: string } | null
   paymentMethodCode: string
-  voucher: ClaimedVoucher | null
+  voucher: StorefrontVoucher | null
   discountAmount: number
 }
 

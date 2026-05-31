@@ -1,0 +1,8 @@
+services:
+  backend:
+    ports:
+      - "${BACKEND_BIND_ADDR:-127.0.0.1}:${BACKEND_HOST_PORT:-5000}:5000"
+
+  frontend:
+    ports:
+      - "${FRONTEND_BIND_ADDR:-127.0.0.1}:${FRONTEND_HOST_PORT:-3000}:3000"

@@ -1,5 +1,6 @@
 import type { Product } from '@/core/types'
-import type { StorefrontVoucher } from '@/features/products/product-api'
+import { calculateVoucherDiscount } from '@/features/products/voucher-pricing'
+import type { StorefrontVoucher } from '@/features/products/voucher-pricing'
 
 export interface LocalCartItem {
   product: Product
@@ -13,7 +14,6 @@ export interface ClaimedVoucher extends StorefrontVoucher {
 
 const CART_KEY = 'lm-cart-items'
 const CHECKOUT_KEY = 'lm-checkout-items'
-const CLAIMED_VOUCHERS_KEY = 'lm-claimed-vouchers'
 const CHECKOUT_VOUCHER_KEY = 'lm-checkout-voucher'
 const CART_EVENT = 'lm-cart-updated'
 
@@ -72,17 +72,6 @@ export function onCartUpdated(listener: () => void) {
   }
 }
 
-export function readClaimedVouchers() {
-  return readJson<ClaimedVoucher[]>(CLAIMED_VOUCHERS_KEY, [])
-}
-
-export function claimVoucher(voucher: StorefrontVoucher) {
-  const claimed = readClaimedVouchers()
-  if (!claimed.some((item) => item.id === voucher.id)) {
-    writeJson(CLAIMED_VOUCHERS_KEY, [...claimed, { ...voucher, claimedAt: new Date().toISOString() }])
-  }
-}
-
 export function saveCheckoutItems(items: LocalCartItem[]) {
   writeJson(CHECKOUT_KEY, items)
 }
@@ -103,14 +92,4 @@ export function saveCheckoutVoucher(voucher: ClaimedVoucher | null) {
 export function readCheckoutVoucher() {
   return readJson<ClaimedVoucher | null>(CHECKOUT_VOUCHER_KEY, null)
 }
-
-export function calculateVoucherDiscount(voucher: ClaimedVoucher | null, subtotal: number) {
-  if (!voucher || subtotal < voucher.minPurchase) return 0
-
-  if (voucher.discountType === 'PERCENTAGE') {
-    const raw = subtotal * (voucher.discountValue / 100)
-    return Math.min(raw, voucher.maxDiscount ?? raw, subtotal)
-  }
-
-  return Math.min(voucher.discountValue, subtotal)
-}
+export { calculateVoucherDiscount }

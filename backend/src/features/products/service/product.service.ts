@@ -8,6 +8,7 @@ interface QueryOptions {
   categoryId?: string;
   search?: string;
   isActive?: boolean;
+  sort?: 'sold-desc';
   page?: number;
   limit?: number;
 }
@@ -125,8 +126,9 @@ function splitProductPayload<T extends Record<string, any>>(data: T) {
 }
 
 export async function getAllProducts(options: QueryOptions) {
-  const { page = 1, limit = 20, categoryId, search, isActive } = options;
+  const { page = 1, limit = 20, categoryId, search, isActive, sort } = options;
   const skip = (page - 1) * limit;
+  const sortBySold = sort === 'sold-desc';
 
   const where: any = {};
   if (categoryId) where.categoryId = categoryId;
@@ -142,8 +144,8 @@ export async function getAllProducts(options: QueryOptions) {
     prisma.product.count({ where }),
     prisma.product.findMany({
       where,
-      skip,
-      take: limit,
+      skip: sortBySold ? undefined : skip,
+      take: sortBySold ? undefined : limit,
       select: {
         id: true,
         categoryId: true,
@@ -169,8 +171,18 @@ export async function getAllProducts(options: QueryOptions) {
   ]);
 
   const meta = await readProductDisplaySummary();
+  const mappedProducts = products.map((product) => attachProductMeta(product, meta, { includeDisplayReviews: false }));
 
-  return { total, products: products.map((product) => attachProductMeta(product, meta, { includeDisplayReviews: false })) };
+  if (sortBySold) {
+    return {
+      total,
+      products: mappedProducts
+        .sort((left, right) => right.soldCount - left.soldCount)
+        .slice(skip, skip + limit),
+    };
+  }
+
+  return { total, products: mappedProducts };
 }
 
 export async function getProductBySlug(slugOrId: string) {

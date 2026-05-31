@@ -5,25 +5,11 @@ import { useRouter } from 'next/navigation'
 import { MapPin } from 'lucide-react'
 import AppBar from '@/shared/ui/AppBar'
 import Card from '@/shared/ui/Card'
-import { apiClient } from '@/core/lib/api-client'
-
-interface AddressRecord {
-  id: string
-  label: string
-  fullName?: string | null
-  phone?: string | null
-  address: string
-  city: string
-  district?: string | null
-  village?: string | null
-  province: string
-  postalCode: string
-  isDefault: boolean
-}
+import { fetchAccountProfile, type AccountAddress } from '@/features/account/account-api'
 
 export default function AccountAddressPage() {
   const router = useRouter()
-  const [addresses, setAddresses] = useState<AddressRecord[]>([])
+  const [addresses, setAddresses] = useState<AccountAddress[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -37,8 +23,8 @@ export default function AccountAddressPage() {
 
     async function loadAddresses() {
       try {
-        const { data } = await apiClient.get('/auth/me')
-        if (alive) setAddresses(data.data.addresses || [])
+        const data = await fetchAccountProfile()
+        if (alive) setAddresses(data.addresses || [])
       } catch {
         if (alive) setError('Gagal memuat alamat pengiriman.')
       } finally {

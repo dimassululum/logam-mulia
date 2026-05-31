@@ -1,12 +1,33 @@
-const DEFAULT_API_URL = 'http://localhost:5000/api'
+const DEFAULT_PUBLIC_API_URL = '/api'
+const DEFAULT_INTERNAL_API_ORIGIN = 'http://backend:5000'
+
+function normalizeApiBaseUrl(value: string) {
+  const normalized = value.trim().replace(/\/+$/, '')
+  return normalized.endsWith('/api') ? normalized : `${normalized}/api`
+}
+
+function resolveInternalApiBaseUrl() {
+  const internalOrigin = process.env.INTERNAL_API_ORIGIN?.trim().replace(/\/+$/, '') || DEFAULT_INTERNAL_API_ORIGIN
+  return `${internalOrigin}/api`
+}
 
 export function resolvePublicApiBaseUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '') || DEFAULT_API_URL
-  return configuredUrl.endsWith('/api') ? configuredUrl : `${configuredUrl}/api`
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim() || DEFAULT_PUBLIC_API_URL
+
+  if (configuredUrl.startsWith('/')) {
+    return typeof window === 'undefined' ? resolveInternalApiBaseUrl() : normalizeApiBaseUrl(configuredUrl)
+  }
+
+  return normalizeApiBaseUrl(configuredUrl)
+}
+
+function getPublicApiAssetBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim() || DEFAULT_PUBLIC_API_URL
+  return normalizeApiBaseUrl(configuredUrl)
 }
 
 function getApiAssetOrigin() {
-  const configuredUrl = resolvePublicApiBaseUrl()
+  const configuredUrl = getPublicApiAssetBaseUrl()
 
   try {
     const url = new URL(configuredUrl)
@@ -45,13 +66,12 @@ export function resolvePublicAssetUrl(value?: string | null) {
     const url = new URL(rawValue)
     if (url.pathname.startsWith('/api/uploads/')) {
       url.pathname = url.pathname.replace(/^\/api\/uploads\//, '/uploads/')
+      return `${apiAssetOrigin}${url.pathname}`
     }
 
-    if (isLocalUploadUrl(url) && apiAssetOrigin) {
-      const apiUrl = new URL(apiAssetOrigin)
-      url.protocol = apiUrl.protocol
-      url.host = apiUrl.host
+    if (isLocalUploadUrl(url)) {
       url.pathname = url.pathname.replace(/^\/api\/uploads\//, '/uploads/')
+      return `${apiAssetOrigin}${url.pathname}`
     }
 
     return url.toString()

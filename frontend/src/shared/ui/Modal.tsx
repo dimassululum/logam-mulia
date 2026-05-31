@@ -39,7 +39,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', c
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
       aria-modal="true"
       role="dialog"
     >
@@ -53,7 +53,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', c
       <div
         ref={dialogRef}
         className={cn(
-          'relative w-full bg-white rounded-2xl shadow-elevation-high',
+          'relative flex max-h-[calc(100svh-1.5rem)] w-full flex-col overflow-hidden bg-white rounded-2xl shadow-elevation-high sm:max-h-[calc(100svh-2rem)]',
           'animate-in',
           sizeMap[size],
           className,
@@ -61,8 +61,8 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', c
       >
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between p-6 border-b border-navy-100">
-            <h2 className="font-heading text-headline-sm text-navy-900">{title}</h2>
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-navy-100 px-4 py-3 sm:p-6">
+            <h2 className="font-heading text-lg font-bold text-navy-900 sm:text-headline-sm">{title}</h2>
             <button
               onClick={onClose}
               className="p-2 rounded-lg text-navy-400 hover:bg-navy-100 hover:text-navy-700 [transition-duration:var(--transition-fast)] transition-colors"
@@ -74,7 +74,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md', c
         )}
 
         {/* Body */}
-        <div className="p-6">{children}</div>
+        <div className="min-h-0 overflow-y-auto p-4 sm:p-6">{children}</div>
       </div>
     </div>
   )

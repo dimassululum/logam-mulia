@@ -9,6 +9,7 @@ export interface HomeProduct {
   price: number
   weightGram: number
   stock: number
+  soldCount: number
   categoryName: string
   imageUrl: string
   updatedAt: string
@@ -163,6 +164,7 @@ function mapProduct(product: any): HomeProduct {
     price: toNumber(product.price),
     weightGram: toNumber(product.weightGram),
     stock: toNumber(product.stock),
+    soldCount: toNumber(product.soldCount),
     categoryName: product.category?.name || 'Lainnya',
     imageUrl: resolvePublicAssetUrl(primaryImage),
     updatedAt: product.updatedAt || product.createdAt || '',
@@ -222,7 +224,7 @@ function mapArticle(article: any): HomeArticle {
 
 export async function getHomeData() {
   const [products, boutiques, articles, companyProfile, metalPrices] = await Promise.all([
-    fetchApi<any[]>('/products?limit=8&isActive=true', []),
+    fetchApi<any[]>('/products?limit=4&isActive=true&sort=sold-desc', []),
     fetchApi<any[]>('/boutiques?isActive=true', []),
     fetchApi<any[]>('/articles?limit=6&isPublished=true', []),
     fetchApi<CompanyProfileMap>('/company-profile', {}),

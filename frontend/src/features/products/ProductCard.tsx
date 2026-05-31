@@ -2,9 +2,11 @@ import Link from 'next/link'
 import { Star } from 'lucide-react'
 import { Product } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
+import { formatCompactDiscount, getProductVoucherPreview, type StorefrontVoucher } from './voucher-pricing'
 
 interface ProductCardProps {
   product: Product
+  vouchers?: StorefrontVoucher[]
 }
 
 function formatCount(value: number) {
@@ -16,8 +18,10 @@ function formatCount(value: number) {
   return String(value)
 }
 
-export default function ProductCard({ product }: ProductCardProps) {
+export default function ProductCard({ product, vouchers = [] }: ProductCardProps) {
   const isOutOfStock = product.stock === 0
+  const voucherPreview = getProductVoucherPreview(product, vouchers)
+  const hasVoucherPrice = voucherPreview.discountAmount > 0
 
   return (
     <article className="group overflow-hidden rounded-2xl border border-navy-100/80 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-navy-100/70">
@@ -57,10 +61,23 @@ export default function ProductCard({ product }: ProductCardProps) {
           </h3>
 
           <div className="pt-1 flex flex-col justify-end min-h-[40px]">
-            <div className="h-[11px] mb-0.5" aria-hidden="true" />
-            <p className="text-[17px] font-bold text-gold-600 leading-tight">
-              {formatRupiah(product.totalPrice)}
-            </p>
+            {hasVoucherPrice ? (
+              <p className="mb-0.5 text-[11px] font-semibold leading-tight text-[#888888] line-through">
+                {formatRupiah(voucherPreview.originalPrice)}
+              </p>
+            ) : (
+              <div className="h-[11px] mb-0.5" aria-hidden="true" />
+            )}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <p className="text-[17px] font-bold text-gold-600 leading-tight">
+                {formatRupiah(voucherPreview.finalPrice)}
+              </p>
+              {hasVoucherPrice ? (
+                <span className="rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-bold leading-none text-[#2E7D32]">
+                  -Rp {formatCompactDiscount(voucherPreview.discountAmount)}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </Link>

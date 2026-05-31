@@ -3,6 +3,8 @@ import Link from 'next/link'
 import Footer from '@/shared/layout/Footer'
 import BannerSlider from '@/features/home/BannerSlider'
 import { getHomeData, type HomeMetalPrices, type HomeProduct } from '@/features/home/home-api'
+import { getStorefrontVouchers } from '@/features/products/product-api'
+import { formatCompactDiscount, getVoucherPreviewForProductAmount } from '@/features/products/voucher-pricing'
 import {
   ShieldCheck,
   TrendingUp,
@@ -167,21 +169,29 @@ function GoldBarIcon({ className }: { className?: string }) {
 }
 
 export default async function HomePage() {
-  const homeData = await getHomeData()
+  const [homeData, vouchers] = await Promise.all([
+    getHomeData(),
+    getStorefrontVouchers(),
+  ])
   const priceCards = buildPriceCards(homeData.products, homeData.metalPrices)
 
-  const displayProducts = homeData.products
+  const displayProducts = [...homeData.products]
+    .sort((a, b) => b.soldCount - a.soldCount)
     .slice(0, 4)
-    .map((p) => ({
+    .map((p) => {
+      const voucherPreview = getVoucherPreviewForProductAmount(p.id, p.price || 0, vouchers)
+      return {
         id: p.id,
         slug: p.slug,
         name: p.name,
-        price: formatShortCurrency(p.price || 0),
+        price: formatShortCurrency(voucherPreview.finalPrice),
         badge: p.stock < 10 && p.stock > 0 ? 'Stok Terbatas' : (p.stock === 0 ? 'Habis' : ''),
-        sold: `${Math.max(0, p.stock)} stok`,
-        originalPrice: '',
+        sold: `${Math.max(0, p.soldCount)} terjual`,
+        originalPrice: voucherPreview.discountAmount > 0 ? formatShortCurrency(voucherPreview.originalPrice) : '',
+        discountLabel: voucherPreview.discountAmount > 0 ? `-Rp ${formatCompactDiscount(voucherPreview.discountAmount)}` : '',
         imageUrl: p.imageUrl,
-      }))
+      }
+    })
 
   const displayBoutiques = homeData.boutiques
     .slice(0, 4)
@@ -377,10 +387,17 @@ export default async function HomePage() {
                   {product.badge && <span className="certified-stamp">{product.badge}</span>}
                   <h3 className="font-bold text-sm text-navy-900 truncate">{product.name}</h3>
                   {product.originalPrice && (
-                    <p className="text-[10px] text-navy-600/50 line-through">{product.originalPrice}</p>
+                    <p className="text-[10px] font-semibold text-[#888888] line-through">{product.originalPrice}</p>
                   )}
-                  <p className="text-gold-400 font-bold text-sm">{product.price}</p>
-                  <p className="text-[10px] text-navy-600/70 font-medium">Terjual {product.sold}</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-gold-400 font-bold text-sm">{product.price}</p>
+                    {product.discountLabel && (
+                      <span className="rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-bold leading-none text-[#2E7D32]">
+                        {product.discountLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-navy-600/70 font-medium">{product.sold}</p>
                 </div>
               </Link>
               ))}

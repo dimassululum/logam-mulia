@@ -10,12 +10,33 @@ if (process.env.NEXT_PUBLIC_API_URL) {
       port: apiUrl.port,
       pathname: '/uploads/**',
     });
+    apiRemotePatterns.push({
+      protocol: apiUrl.protocol.replace(':', ''),
+      hostname: apiUrl.hostname,
+      port: apiUrl.port,
+      pathname: '/api/uploads/**',
+    });
   } catch {
     // Ignore invalid local env values so Next can still boot and show the real config issue elsewhere.
   }
 }
 
 const nextConfig = {
+  output: 'standalone',
+  async rewrites() {
+    const internalApiOrigin = process.env.INTERNAL_API_ORIGIN || 'http://backend:5000';
+
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${internalApiOrigin}/api/:path*`,
+      },
+      {
+        source: '/uploads/:path*',
+        destination: `${internalApiOrigin}/uploads/:path*`,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

@@ -8,6 +8,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   refreshTokenSchema,
+  updateProfileSchema,
 } from '../schema/auth.schema';
 
 const router = Router();
@@ -32,5 +33,8 @@ router.post('/logout', authenticate, authController.logout);
 
 // GET /api/auth/me  [protected]
 router.get('/me', authenticate, authController.getMe);
+
+// PATCH /api/auth/me  [protected]
+router.patch('/me', authenticate, validate(updateProfileSchema), authController.updateProfile);
 
 export default router;

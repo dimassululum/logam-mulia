@@ -5,23 +5,25 @@ import { Product } from '@/core/types'
 import ProductCard from './ProductCard'
 import { ProductCardSkeleton } from '@/shared/ui/Skeleton'
 import { Search, ArrowUpDown, Check } from 'lucide-react'
+import { getProductVoucherPreview, type StorefrontVoucher } from './voucher-pricing'
 
 interface ProductListProps {
   products: Product[]
+  vouchers?: StorefrontVoucher[]
   isLoading?: boolean
 }
 
 const SORT_OPTIONS = [
-  { value: 'newest',     label: 'Terbaru'         },
   { value: 'bestseller', label: 'Terlaris'         },
+  { value: 'newest',     label: 'Terbaru'         },
   { value: 'price-desc', label: 'Harga Tertinggi'  },
   { value: 'price-asc',  label: 'Harga Terendah'   },
 ]
 
-export default function ProductList({ products, isLoading }: ProductListProps) {
+export default function ProductList({ products, vouchers = [], isLoading }: ProductListProps) {
   const [search,        setSearch]        = useState('')
   const [category,      setCategory]      = useState('all')
-  const [sort,          setSort]          = useState('newest')
+  const [sort,          setSort]          = useState('bestseller')
   const [sortOpen,      setSortOpen]      = useState(false)
   const sortRef = useRef<HTMLDivElement>(null)
   const categories = [
@@ -47,15 +49,15 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
     .filter((p) => category === 'all' || p.category === category)
     .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
-      if (sort === 'price-asc')  return a.totalPrice - b.totalPrice
-      if (sort === 'price-desc') return b.totalPrice - a.totalPrice
+      if (sort === 'price-asc')  return getProductVoucherPreview(a, vouchers).finalPrice - getProductVoucherPreview(b, vouchers).finalPrice
+      if (sort === 'price-desc') return getProductVoucherPreview(b, vouchers).finalPrice - getProductVoucherPreview(a, vouchers).finalPrice
       if (sort === 'bestseller') return b.soldCount - a.soldCount
       if (sort === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       return 0
     })
 
   return (
-    <section>
+    <section className="min-w-0 overflow-x-hidden">
       {/* Search Bar */}
       <div className="relative mb-5">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-navy-400 pointer-events-none" />
@@ -69,7 +71,7 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
         />
       </div>
 
-      <div className="mb-6 flex items-start gap-3">
+      <div className="mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar" role="tablist">
             {categories.map((cat) => (
@@ -92,10 +94,10 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
           </div>
         </div>
 
-        <div className="relative shrink-0" ref={sortRef}>
+        <div className="relative w-full shrink-0 sm:w-auto" ref={sortRef}>
           <button
             onClick={() => setSortOpen(prev => !prev)}
-            className="flex h-10 items-center gap-2 rounded-full border border-navy-200 bg-white px-3 text-sm font-semibold text-navy-700 shadow-sm transition-colors hover:border-gold-400 hover:text-navy-900"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-full border border-navy-200 bg-white px-3 text-sm font-semibold text-navy-700 shadow-sm transition-colors hover:border-gold-400 hover:text-navy-900 sm:w-auto"
             aria-haspopup="listbox"
             aria-expanded={sortOpen}
           >
@@ -104,7 +106,7 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
           </button>
 
           {sortOpen && (
-            <div className="absolute right-0 top-[calc(100%+8px)] z-30 bg-white border border-navy-200 rounded-xl shadow-lg overflow-hidden min-w-[180px] animate-in">
+            <div className="absolute right-0 top-[calc(100%+8px)] z-30 min-w-full overflow-hidden rounded-xl border border-navy-200 bg-white shadow-lg animate-in sm:min-w-[180px]">
               {SORT_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -142,6 +144,7 @@ export default function ProductList({ products, isLoading }: ProductListProps) {
             <ProductCard
               key={product.id}
               product={product}
+              vouchers={vouchers}
             />
           ))}
         </div>

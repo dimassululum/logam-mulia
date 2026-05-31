@@ -1,34 +1,52 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowLeft, Check, HeadphonesIcon, Minus, Plus, ShoppingCart, Tag, Ticket, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Check, HeadphonesIcon, Minus, Plus, ShoppingCart, Tag, Trash2 } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import {
-  calculateVoucherDiscount,
-  ClaimedVoucher,
   LocalCartItem,
   readCartItems,
-  readClaimedVouchers,
   saveCartItems,
   saveCheckoutItems,
   saveCheckoutVoucher,
 } from '@/features/cart/cart-storage'
 import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
+import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
+import { mapStorefrontVoucher, summarizeApplicableVouchers, type StorefrontVoucher } from '@/features/products/voucher-pricing'
+
+const API_URL = resolvePublicApiBaseUrl()
 
 export default function CartPage() {
   const waLink = useCompanyWhatsAppLink('Halo admin, saya butuh bantuan terkait keranjang belanja.')
   const [items, setItems] = useState<LocalCartItem[]>([])
-  const [claimedVouchers, setClaimedVouchers] = useState<ClaimedVoucher[]>([])
-  const [showVoucherModal, setShowVoucherModal] = useState(false)
-  const [activeVoucherId, setActiveVoucherId] = useState('')
+  const [vouchers, setVouchers] = useState<StorefrontVoucher[]>([])
   const [checkoutHref, setCheckoutHref] = useState('/login?redirect=/checkout')
 
   useEffect(() => {
     setItems(readCartItems())
-    setClaimedVouchers(readClaimedVouchers())
     setCheckoutHref(localStorage.getItem('access_token') ? '/checkout' : '/login?redirect=/checkout')
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+
+    async function loadVouchers() {
+      try {
+        const response = await fetch(`${API_URL}/vouchers/public?limit=100`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!alive || !response.ok) return
+        setVouchers(Array.isArray(json.data) ? json.data.map(mapStorefrontVoucher) : [])
+      } catch (error) {
+        console.error('Error fetching public vouchers', error)
+      }
+    }
+
+    loadVouchers()
+    return () => {
+      alive = false
+    }
   }, [])
 
   function persistItems(nextItems: LocalCartItem[]) {
@@ -40,14 +58,14 @@ export default function CartPage() {
   const selectedItems = items.filter((item) => item.checked)
   const selectedCount = selectedItems.reduce((sum, item) => sum + item.quantity, 0)
   const subtotalPrice = selectedItems.reduce((sum, item) => sum + item.product.totalPrice * item.quantity, 0)
-  const activeVoucher = claimedVouchers.find((voucher) => voucher.id === activeVoucherId) ?? null
-  const discount = calculateVoucherDiscount(activeVoucher, subtotalPrice)
+  const voucherSummary = summarizeApplicableVouchers(vouchers, selectedItems.map((item) => ({
+    productId: item.product.id,
+    price: item.product.totalPrice,
+    quantity: item.quantity,
+  })))
+  const hasAppliedVoucher = voucherSummary.appliedVouchers.length > 0
+  const discount = voucherSummary.discountAmount
   const totalPrice = Math.max(0, subtotalPrice - discount)
-
-  const eligibleVouchers = useMemo(
-    () => claimedVouchers.filter((voucher) => subtotalPrice >= voucher.minPurchase),
-    [claimedVouchers, subtotalPrice],
-  )
 
   function toggleAll() {
     const newState = !allChecked
@@ -74,7 +92,8 @@ export default function CartPage() {
 
   function prepareCheckout() {
     saveCheckoutItems(selectedItems)
-    saveCheckoutVoucher(activeVoucher)
+    const primaryVoucher = voucherSummary.appliedVouchers[0]?.voucher
+    saveCheckoutVoucher(primaryVoucher ? { ...primaryVoucher, claimedAt: new Date().toISOString() } : null)
   }
 
   return (
@@ -155,21 +174,21 @@ export default function CartPage() {
       </main>
 
       <div className="fixed bottom-0 left-0 w-full z-30 shadow-[0_-8px_30px_rgba(0,0,0,0.06)]">
-        <button
-          type="button"
-          onClick={() => setShowVoucherModal(true)}
-          className="w-full bg-navy-900 px-5 py-3 border-b border-navy-800 flex justify-between items-center cursor-pointer hover:bg-navy-800 transition-colors"
-        >
+        <div className={`w-full px-5 py-2.5 border-t flex justify-between items-center transition-colors ${
+          hasAppliedVoucher ? 'border-green-200 bg-[#E8F5E9]' : 'border-navy-100 bg-white'
+        }`}>
           <div className="flex items-center gap-2">
-            <Ticket className="w-5 h-5 text-gold-400" />
-            <span className="text-gold-400 font-bold text-xs uppercase tracking-wider">
-              {activeVoucher ? `Voucher: ${activeVoucher.code}` : 'Pakai voucher yang sudah diklaim'}
+            <Tag className={`w-4 h-4 ${hasAppliedVoucher ? 'text-[#2E7D32]' : 'text-navy-500'}`} />
+            <span className={`text-xs font-semibold ${hasAppliedVoucher ? 'text-[#2E7D32]' : 'text-navy-700'}`}>
+              {hasAppliedVoucher ? 'Voucher sudah diterapkan!' : 'Voucher diterapkan otomatis jika tersedia'}
             </span>
           </div>
-          <span className="text-navy-900 bg-gold-400 text-xs font-bold px-4 py-1.5 rounded-lg">
-            {activeVoucher ? 'Ganti' : 'Gunakan'}
-          </span>
-        </button>
+          {hasAppliedVoucher ? (
+            <span className="text-xs font-semibold text-[#2E7D32]">
+              Hemat {formatRupiah(discount)}
+            </span>
+          ) : null}
+        </div>
 
         <div className="bg-white/95 backdrop-blur-md px-5 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -184,7 +203,7 @@ export default function CartPage() {
             <div className="flex flex-col">
               <span className="text-[11px] text-navy-500 font-bold uppercase tracking-wider mb-0.5">Total</span>
               <span className="font-heading text-xl font-bold text-gold-600 leading-none">{formatRupiah(totalPrice)}</span>
-              {discount > 0 ? <span className="mt-1 text-xs font-semibold text-green-600">Hemat {formatRupiah(discount)}</span> : null}
+              {discount > 0 ? <span className="mt-1 text-xs font-semibold text-[#2E7D32]">Hemat {formatRupiah(discount)}</span> : null}
             </div>
           </div>
           <Link
@@ -198,63 +217,6 @@ export default function CartPage() {
           </Link>
         </div>
       </div>
-
-      {showVoucherModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-navy-900/40 backdrop-blur-sm p-4">
-          <div className="bg-surface w-full max-w-md rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0 sm:zoom-in-95">
-            <div className="flex justify-between items-center p-5 border-b border-navy-200 bg-white">
-              <h3 className="font-heading font-bold text-lg text-navy-900">Voucher Diklaim</h3>
-              <button onClick={() => setShowVoucherModal(false)} className="text-navy-400 hover:text-navy-900 transition-colors">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <div className="p-5 bg-surface space-y-3">
-              {eligibleVouchers.length === 0 ? (
-                <div className="rounded-xl border border-navy-200 bg-white p-5 text-center">
-                  <Tag className="mx-auto mb-3 h-8 w-8 text-navy-300" />
-                  <p className="font-bold text-navy-900">Belum ada voucher yang bisa dipakai</p>
-                  <p className="mt-1 text-sm text-navy-500">Ambil voucher di detail produk atau penuhi minimum belanja.</p>
-                </div>
-              ) : (
-                eligibleVouchers.map((voucher) => (
-                  <button
-                    key={voucher.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveVoucherId(voucher.id)
-                      setShowVoucherModal(false)
-                    }}
-                    className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
-                      activeVoucherId === voucher.id ? 'border-gold-400 bg-gold-50' : 'border-navy-200 bg-white hover:border-gold-300'
-                    }`}
-                  >
-                    <p className="font-bold text-navy-900">{voucher.code}</p>
-                    <p className="mt-1 text-sm text-navy-500">Min. transaksi {formatRupiah(voucher.minPurchase)}</p>
-                    <p className="mt-3 text-sm font-bold text-red-500">
-                      Potongan {voucher.discountType === 'PERCENTAGE' ? `${voucher.discountValue}%` : formatRupiah(voucher.discountValue)}
-                    </p>
-                  </button>
-                ))
-              )}
-            </div>
-
-            {activeVoucher && (
-              <div className="p-4 border-t border-navy-200 bg-white">
-                <button
-                  onClick={() => {
-                    setActiveVoucherId('')
-                    setShowVoucherModal(false)
-                  }}
-                  className="w-full text-red-500 font-bold py-3 rounded-xl hover:bg-red-50 transition-colors text-sm"
-                >
-                  Lepas Voucher
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

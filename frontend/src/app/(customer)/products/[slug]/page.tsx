@@ -9,6 +9,7 @@ import {
   getStorefrontVouchers,
 } from '@/features/products/product-api'
 import ProductDetailActions from '@/features/products/ProductDetailActions'
+import { formatCompactDiscount, getProductVoucherPreview } from '@/features/products/voucher-pricing'
 
 interface PageProps {
   params: { slug: string }
@@ -71,9 +72,8 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
   const related = await getRelatedStorefrontProducts(product.id, 4)
   const images = product.images.length > 0 ? product.images : product.imageUrl ? [product.imageUrl] : []
-  const applicableVouchers = vouchers.filter((voucher) => (
-    voucher.productIds.length === 0 || voucher.productIds.includes(product.id)
-  ))
+  const voucherPreview = getProductVoucherPreview(product, vouchers)
+  const hasVoucherPrice = voucherPreview.discountAmount > 0
 
   return (
     <div className="bg-surface min-h-screen">
@@ -110,10 +110,22 @@ export default async function ProductDetailPage({ params }: PageProps) {
                 {product.category}
               </span>
               <h1 className="font-heading text-3xl text-navy-900 leading-tight font-bold">{product.name}</h1>
-              <p className="font-heading text-2xl font-bold text-gold-600 mt-3">{formatRupiah(product.totalPrice)}</p>
+              <div className="mt-3">
+                {hasVoucherPrice ? (
+                  <p className="text-sm font-semibold text-[#888888] line-through">{formatRupiah(voucherPreview.originalPrice)}</p>
+                ) : null}
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="font-heading text-2xl font-bold text-gold-600">{formatRupiah(voucherPreview.finalPrice)}</p>
+                  {hasVoucherPrice ? (
+                    <span className="rounded-full bg-[#E8F5E9] px-2.5 py-1 text-xs font-bold text-[#2E7D32]">
+                      Hemat Rp {formatCompactDiscount(voucherPreview.discountAmount)}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
-            <ProductDetailActions product={product} vouchers={applicableVouchers} />
+            <ProductDetailActions product={product} />
 
             <div className="grid grid-cols-3 gap-4 py-6 border-y border-navy-200">
               {[
@@ -203,21 +215,36 @@ export default async function ProductDetailPage({ params }: PageProps) {
             </div>
             <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
               {related.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/products/${item.slug}`}
-                  className="w-[180px] shrink-0 bg-white border border-navy-200 rounded-2xl p-4 group hover:shadow-md transition-all duration-300"
-                >
-                  <div className="mb-4 aspect-square w-full overflow-hidden rounded-xl bg-surface flex items-center justify-center">
-                    {item.imageUrl ? (
-                      <img src={item.imageUrl} alt={item.name} className="h-full w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105" />
-                    ) : (
-                      <ProductImageFallback />
-                    )}
-                  </div>
-                  <p className="text-sm text-navy-900 font-bold truncate">{item.name}</p>
-                  <p className="text-gold-600 font-bold mt-1 text-sm">{formatRupiah(item.totalPrice)}</p>
-                </Link>
+                (() => {
+                  const relatedPreview = getProductVoucherPreview(item, vouchers)
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`/products/${item.slug}`}
+                      className="w-[180px] shrink-0 bg-white border border-navy-200 rounded-2xl p-4 group hover:shadow-md transition-all duration-300"
+                    >
+                      <div className="mb-4 aspect-square w-full overflow-hidden rounded-xl bg-surface flex items-center justify-center">
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="h-full w-full object-contain p-2 transition-transform duration-300 group-hover:scale-105" />
+                        ) : (
+                          <ProductImageFallback />
+                        )}
+                      </div>
+                      <p className="text-sm text-navy-900 font-bold truncate">{item.name}</p>
+                      {relatedPreview.discountAmount > 0 ? (
+                        <p className="mt-1 text-[11px] font-semibold text-[#888888] line-through">{formatRupiah(relatedPreview.originalPrice)}</p>
+                      ) : null}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <p className="text-gold-600 font-bold text-sm">{formatRupiah(relatedPreview.finalPrice)}</p>
+                        {relatedPreview.discountAmount > 0 ? (
+                          <span className="rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-bold leading-none text-[#2E7D32]">
+                            -Rp {formatCompactDiscount(relatedPreview.discountAmount)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </Link>
+                  )
+                })()
               ))}
             </div>
           </section>
