@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Input from '@/shared/ui/Input'
 import Button from '@/shared/ui/Button'
+import { SHIPPING_CARRIERS, ShippingCarrierLogo } from '@/features/shipping/shipping-carriers'
 
 const shippingSchema = z.object({
   fullName:   z.string().min(2, 'Nama minimal 2 karakter'),
@@ -24,8 +25,6 @@ interface ShippingFormProps {
   onSubmit: (data: ShippingFormValues) => void
   isLoading?: boolean
 }
-
-const COURIERS = ['JNE', 'J&T Express', 'SiCepat', 'Anteraja', 'Gojek Instant']
 
 export default function ShippingForm({ onSubmit, isLoading }: ShippingFormProps) {
   const { register, handleSubmit, formState: { errors }, control, setValue } = useForm<ShippingFormValues>({
@@ -212,18 +211,19 @@ export default function ShippingForm({ onSubmit, isLoading }: ShippingFormProps)
         </div>
         <div className="p-6">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {COURIERS.map((courier) => (
+            {SHIPPING_CARRIERS.map((courier) => (
               <label
-                key={courier}
+                key={courier.code}
                 className="flex items-center gap-2 border border-[#d2c5b1] rounded-xl px-3 py-3 cursor-pointer hover:border-gold-400 has-[:checked]:border-gold-500 has-[:checked]:bg-gold-50 transition-all"
               >
                 <input
                   type="radio"
-                  value={courier}
+                  value={courier.code}
                   className="accent-gold-500"
                   {...register('courier')}
                 />
-                <span className="text-sm font-medium text-navy-800">{courier}</span>
+                <ShippingCarrierLogo carrier={courier.code} className="h-8 w-12" />
+                <span className="text-sm font-medium text-navy-800">{courier.label}</span>
               </label>
             ))}
           </div>

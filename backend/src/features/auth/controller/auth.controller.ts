@@ -48,7 +48,7 @@ export async function refreshToken(req: Request, res: Response): Promise<void> {
 }
 
 export async function logout(req: Request, res: Response): Promise<void> {
-  await authService.logout(req.user!.userId);
+  await authService.logout(req.user!.userId, req.body?.refreshToken);
   sendSuccess({ res, message: 'Logout berhasil' });
 }
 

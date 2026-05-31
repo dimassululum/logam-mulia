@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { LogOut, Menu } from 'lucide-react'
 import type { CurrentUser } from '@/core/types'
 import { MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { apiClient } from '@/core/lib/api-client'
 
 interface AdminTopbarProps {
   currentUser: CurrentUser
@@ -30,7 +31,19 @@ export default function AdminTopbar({
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [])
 
-  function handleLogout() {
+  async function handleLogout() {
+    const refreshToken = localStorage.getItem('refresh_token')
+
+    try {
+      await apiClient.post('/auth/logout', { refreshToken })
+    } catch {
+      // Local admin session is cleared either way.
+    }
+
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    localStorage.removeItem('user_name')
+    localStorage.removeItem('user_email')
     document.cookie = `${MOCK_AUTH_COOKIES.role}=; path=/; max-age=0; SameSite=Lax`
     document.cookie = `${MOCK_AUTH_COOKIES.name}=; path=/; max-age=0; SameSite=Lax`
     document.cookie = `${MOCK_AUTH_COOKIES.email}=; path=/; max-age=0; SameSite=Lax`

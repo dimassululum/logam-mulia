@@ -47,8 +47,9 @@ export default function AccountPage() {
   }, [user?.name])
 
   async function handleLogout() {
+    const refreshToken = localStorage.getItem('refresh_token')
     try {
-      await apiClient.post('/auth/logout')
+      await apiClient.post('/auth/logout', { refreshToken })
     } catch {
       // Token is cleared locally either way so the customer can leave the session.
     } finally {

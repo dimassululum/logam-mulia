@@ -8,6 +8,8 @@ export interface AccessTokenPayload {
 
 export interface RefreshTokenPayload {
   userId: string;
+  sessionId?: string;
+  exp?: number;
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {

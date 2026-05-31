@@ -26,14 +26,18 @@ import {
   readCartItems,
   readCheckoutItems,
   readCheckoutVoucher,
+  saveCartItems,
+  saveCheckoutItems,
 } from '@/features/cart/cart-storage'
 import { mapStorefrontVoucher, summarizeApplicableVouchers, type StorefrontVoucher } from '@/features/products/voucher-pricing'
+import { mapApiProduct } from '@/features/products/product-api'
 import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
 import { createCustomerOrder } from '@/features/orders/order-api'
 import {
   fetchPublicPaymentMethods,
   type PaymentMethodRecord,
 } from '@/features/payment-methods/payment-method-api'
+import { SHIPPING_CARRIERS, ShippingCarrierLogo } from '@/features/shipping/shipping-carriers'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface EkspedisiOption {
@@ -70,10 +74,14 @@ const EMPTY_ADDRESS: GuestCheckoutAddress = {
   postalCode: '',
 }
 
-const ZERO_EKSPEDISI_OPTIONS: EkspedisiOption[] = [
-  { id: 'jne-free', name: 'JNE', time: '-', price: 0, courier: 'JNE', service: 'Reguler' },
-  { id: 'jnt-free', name: 'J&T Express', time: '-', price: 0, courier: 'JNT', service: 'Reguler' },
-]
+const STATIC_EKSPEDISI_OPTIONS: EkspedisiOption[] = SHIPPING_CARRIERS.map((carrier) => ({
+  id: `${carrier.code.toLowerCase()}-regular`,
+  name: carrier.label,
+  time: carrier.eta,
+  price: carrier.price,
+  courier: carrier.code,
+  service: carrier.service,
+}))
 
 const API_URL = resolvePublicApiBaseUrl()
 const MAX_KTP_FILE_SIZE_MB = 10
@@ -105,7 +113,7 @@ export default function CheckoutPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [butikOptions, setButikOptions] = useState<ButikOption[]>([])
-  const [ekspedisiOptions, setEkspedisiOptions] = useState<EkspedisiOption[]>(ZERO_EKSPEDISI_OPTIONS)
+  const [ekspedisiOptions, setEkspedisiOptions] = useState<EkspedisiOption[]>(STATIC_EKSPEDISI_OPTIONS)
   const [isLoadingRates, setIsLoadingRates] = useState(false)
   const [shippingRateError, setShippingRateError] = useState('')
   const [provinceOptions, setProvinceOptions] = useState<RajaOngkirAreaOption[]>([])
@@ -241,9 +249,44 @@ export default function CheckoutPage() {
     loadVouchers()
     loadCustomerProfile()
 
+    async function refreshCheckoutItemsFromProducts(items: LocalCartItem[]) {
+      if (items.length === 0) return
+
+      try {
+        const response = await fetch(`${API_URL}/products?limit=1000&isActive=true`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!response.ok || !Array.isArray(json.data)) return
+        if (!alive) return
+
+        const productsBySlug = new Map(json.data.map((product: any) => {
+          const mappedProduct = mapApiProduct(product)
+          return [mappedProduct.slug, mappedProduct]
+        }))
+        const refreshedItems = items
+          .map((item) => {
+            const freshProduct = productsBySlug.get(item.product.slug)
+            return freshProduct ? { ...item, product: freshProduct } : null
+          })
+          .filter((item): item is LocalCartItem => Boolean(item))
+
+        setCheckoutItems(refreshedItems)
+        saveCheckoutItems(refreshedItems)
+        saveCartItems(readCartItems()
+          .map((item) => {
+            const freshProduct = productsBySlug.get(item.product.slug)
+            return freshProduct ? { ...item, product: freshProduct } : null
+          })
+          .filter((item): item is LocalCartItem => Boolean(item)))
+      } catch (error) {
+        console.error('Error refreshing checkout products', error)
+      }
+    }
+
     const storedCheckoutItems = readCheckoutItems()
     const checkedCartItems = readCartItems().filter((item) => item.checked)
-    setCheckoutItems(storedCheckoutItems.length > 0 ? storedCheckoutItems : checkedCartItems)
+    const initialCheckoutItems = storedCheckoutItems.length > 0 ? storedCheckoutItems : checkedCartItems
+    setCheckoutItems(initialCheckoutItems)
+    refreshCheckoutItemsFromProducts(initialCheckoutItems)
     setSavedCheckoutVoucher(readCheckoutVoucher())
 
     return () => {
@@ -259,13 +302,13 @@ export default function CheckoutPage() {
       try {
         const response = await fetch(`${API_URL}/checkout/destinations/provinces`, { cache: 'no-store' })
         const json = await response.json()
-        if (!response.ok) throw new Error(json.message || 'Gagal memuat provinsi RajaOngkir.')
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat provinsi dari database.')
         if (!alive) return
         setProvinceOptions(json.data || [])
       } catch (error) {
         if (!alive) return
         setProvinceOptions([])
-        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat provinsi RajaOngkir.')
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat provinsi dari database.')
       } finally {
         if (alive) setIsLoadingDestinations(false)
       }
@@ -289,13 +332,13 @@ export default function CheckoutPage() {
       try {
         const response = await fetch(`${API_URL}/checkout/destinations/cities?provinceId=${selectedProvinceId}`, { cache: 'no-store' })
         const json = await response.json()
-        if (!response.ok) throw new Error(json.message || 'Gagal memuat kota/kabupaten RajaOngkir.')
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat kota/kabupaten dari database.')
         if (!alive) return
         setCityOptions(json.data || [])
       } catch (error) {
         if (!alive) return
         setCityOptions([])
-        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kota/kabupaten RajaOngkir.')
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kota/kabupaten dari database.')
       } finally {
         if (alive) setIsLoadingDestinations(false)
       }
@@ -318,13 +361,13 @@ export default function CheckoutPage() {
       try {
         const response = await fetch(`${API_URL}/checkout/destinations/districts?cityId=${selectedCityId}`, { cache: 'no-store' })
         const json = await response.json()
-        if (!response.ok) throw new Error(json.message || 'Gagal memuat kecamatan RajaOngkir.')
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat kecamatan dari database.')
         if (!alive) return
         setDistrictOptions(json.data || [])
       } catch (error) {
         if (!alive) return
         setDistrictOptions([])
-        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kecamatan RajaOngkir.')
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kecamatan dari database.')
       } finally {
         if (alive) setIsLoadingDestinations(false)
       }
@@ -347,13 +390,13 @@ export default function CheckoutPage() {
       try {
         const response = await fetch(`${API_URL}/checkout/destinations/subdistricts?districtId=${selectedDistrictId}`, { cache: 'no-store' })
         const json = await response.json()
-        if (!response.ok) throw new Error(json.message || 'Gagal memuat kelurahan RajaOngkir.')
+        if (!response.ok) throw new Error(json.message || 'Gagal memuat kelurahan dari database.')
         if (!alive) return
         setSubdistrictOptions(json.data || [])
       } catch (error) {
         if (!alive) return
         setSubdistrictOptions([])
-        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kelurahan RajaOngkir.')
+        setDestinationError(error instanceof Error ? error.message : 'Gagal memuat kelurahan dari database.')
       } finally {
         if (alive) setIsLoadingDestinations(false)
       }
@@ -365,54 +408,66 @@ export default function CheckoutPage() {
   }, [selectedDistrictId])
 
   useEffect(() => {
+    if (selectedProvinceId || provinceOptions.length !== 1) return
+    const [province] = provinceOptions
+    setSelectedProvinceId(province.id)
+    setAddressForm((current) => ({
+      ...current,
+      province: province.name,
+      city: '',
+      district: '',
+      village: '',
+      postalCode: '',
+      rajaOngkirDestinationId: undefined,
+    }))
+  }, [provinceOptions, selectedProvinceId])
+
+  useEffect(() => {
+    if (selectedCityId || cityOptions.length !== 1) return
+    const [city] = cityOptions
+    setSelectedCityId(city.id)
+    setAddressForm((current) => ({
+      ...current,
+      city: city.name,
+      district: '',
+      village: '',
+      postalCode: '',
+      rajaOngkirDestinationId: undefined,
+    }))
+  }, [cityOptions, selectedCityId])
+
+  useEffect(() => {
+    if (selectedDistrictId || districtOptions.length !== 1) return
+    const [district] = districtOptions
+    setSelectedDistrictId(district.id)
+    setAddressForm((current) => ({
+      ...current,
+      district: district.name,
+      village: '',
+      postalCode: '',
+      rajaOngkirDestinationId: undefined,
+    }))
+  }, [districtOptions, selectedDistrictId])
+
+  useEffect(() => {
+    if (selectedSubdistrictId || subdistrictOptions.length !== 1) return
+    const [subdistrict] = subdistrictOptions
+    setSelectedSubdistrictId(subdistrict.id)
+    setAddressForm((current) => ({
+      ...current,
+      village: subdistrict.name,
+      postalCode: subdistrict.zipCode || '',
+      rajaOngkirDestinationId: subdistrict.id,
+    }))
+  }, [selectedSubdistrictId, subdistrictOptions])
+
+  useEffect(() => {
     if (deliveryType !== 'ekspedisi') return
-    setEkspedisiOptions(ZERO_EKSPEDISI_OPTIONS)
-    if (!selectedAddress?.city || checkoutItems.length === 0) return
-    let alive = true
-
-    async function loadShippingRates() {
-      setIsLoadingRates(true)
-      setShippingRateError('')
-      setSelectedEkspedisi(null)
-      try {
-        const weightGram = Math.max(1, Math.ceil(checkoutItems.reduce((sum, item) => sum + item.product.weightGram * item.quantity, 0)))
-        const params = new URLSearchParams({
-          destinationCity: selectedAddress.city,
-          weightGram: String(weightGram),
-        })
-        if (selectedAddress.district) params.set('destinationDistrict', selectedAddress.district)
-        if (selectedAddress.village) params.set('destinationVillage', selectedAddress.village)
-        if (selectedAddress.postalCode) params.set('destinationPostalCode', selectedAddress.postalCode)
-        if (selectedAddress.rajaOngkirDestinationId) params.set('destinationId', String(selectedAddress.rajaOngkirDestinationId))
-
-        const response = await fetch(`${API_URL}/checkout/shipping-rates?${params.toString()}`, { cache: 'no-store' })
-        const json = await response.json()
-        if (!response.ok) throw new Error(json.message)
-        if (!alive) return
-        const rates = (json.data || []).map((rate: any) => ({
-          id: rate.id,
-          name: rate.name,
-          time: rate.etd,
-          price: rate.price,
-          courier: rate.courier,
-          service: rate.service,
-        }))
-        setEkspedisiOptions(rates.length > 0 ? rates : ZERO_EKSPEDISI_OPTIONS)
-      } catch (error) {
-        if (alive) {
-          setEkspedisiOptions(ZERO_EKSPEDISI_OPTIONS)
-          setShippingRateError(error instanceof Error ? error.message : 'Gagal memuat ongkir RajaOngkir.')
-        }
-      } finally {
-        if (alive) setIsLoadingRates(false)
-      }
-    }
-
-    loadShippingRates()
-    return () => {
-      alive = false
-    }
-  }, [checkoutItems, deliveryType, selectedAddress])
+    setEkspedisiOptions(STATIC_EKSPEDISI_OPTIONS)
+    setShippingRateError('')
+    setIsLoadingRates(false)
+    if (!selectedAddress) setSelectedEkspedisi(null)
+  }, [deliveryType, selectedAddress])
 
   const handleSelectEkspedisi = (opt: EkspedisiOption) => {
     setSelectedEkspedisi(opt)
@@ -657,6 +712,11 @@ export default function CheckoutPage() {
                 <Truck className={`w-6 h-6 ${deliveryType === 'ekspedisi' ? 'text-gold-600' : 'text-navy-400'}`} />
                 <span className="font-bold text-navy-900">Pengiriman Ekspedisi</span>
               </div>
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                {SHIPPING_CARRIERS.map((carrier) => (
+                  <ShippingCarrierLogo key={carrier.code} carrier={carrier.code} className="h-14 w-full rounded-lg p-2" />
+                ))}
+              </div>
               <p className="text-sm text-navy-500 mt-1">Kirim ke alamat tujuan.</p>
             </RadioCard>
 
@@ -709,15 +769,18 @@ export default function CheckoutPage() {
               {selectedAddress && (
                 <div className="rounded-xl border border-navy-200 bg-white p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-bold text-navy-900">Ekspedisi</p>
                       {selectedEkspedisi ? (
-                        <p className="mt-1 text-sm text-navy-600">
-                          {selectedEkspedisi.name}{selectedEkspedisi.service ? ` ${selectedEkspedisi.service}` : ''} · {selectedEkspedisi.time} · {formatRupiah(selectedEkspedisi.price)}
-                        </p>
+                        <div className="mt-2 flex min-w-0 items-center gap-3">
+                          <ShippingCarrierLogo carrier={selectedEkspedisi.courier || selectedEkspedisi.name} className="h-12 w-24 rounded-lg p-2" />
+                          <p className="min-w-0 text-sm text-navy-600">
+                            {selectedEkspedisi.name}{selectedEkspedisi.service ? ` ${selectedEkspedisi.service}` : ''} · {selectedEkspedisi.time} · {formatRupiah(selectedEkspedisi.price)}
+                          </p>
+                        </div>
                       ) : (
                         <p className="mt-1 text-sm text-navy-500">
-                          {isLoadingRates ? 'Memuat ongkir RajaOngkir...' : shippingRateError || 'Belum dipilih'}
+                          {shippingRateError || 'Belum dipilih'}
                         </p>
                       )}
                     </div>
@@ -813,7 +876,7 @@ export default function CheckoutPage() {
         <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto -mx-1 px-1">
           {isLoadingRates ? (
             <div className="rounded-xl border border-navy-200 bg-navy-50 p-4 text-sm text-navy-600">
-              Memuat ongkir dari RajaOngkir...
+              Memuat pilihan ekspedisi...
             </div>
           ) : shippingRateError ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-600">
@@ -831,14 +894,17 @@ export default function CheckoutPage() {
               selected={selectedEkspedisi?.id === opt.id}
               onClick={() => handleSelectEkspedisi(opt)}
             >
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-navy-900">{opt.name}</p>
-                  <p className="text-sm text-navy-500 mt-1">
-                    {opt.service ? `${opt.service} · ` : ''}Estimasi: {opt.time}
-                  </p>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-4">
+                  <ShippingCarrierLogo carrier={opt.courier || opt.name} className="h-16 w-28 rounded-lg p-2" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-navy-900">{opt.name}</p>
+                    <p className="text-sm text-navy-500 mt-1">
+                      {opt.service ? `${opt.service} · ` : ''}Estimasi: {opt.time}
+                    </p>
+                  </div>
                 </div>
-                <p className="font-bold text-gold-600">{formatRupiah(opt.price)}</p>
+                <p className="shrink-0 font-bold text-gold-600">{formatRupiah(opt.price)}</p>
               </div>
             </RadioCard>
           ))}

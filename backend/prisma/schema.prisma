@@ -70,6 +70,7 @@ model User {
   refreshToken   String?        @map("refresh_token")
   passwordResetTokenHash String? @map("password_reset_token_hash")
   passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
+  refreshSessions UserRefreshSession[]
   addresses      Address[]
   orders         Order[]
   reviews        Review[]
@@ -80,6 +81,22 @@ model User {
 
   @@map("users")
   @@index([passwordResetTokenHash])
+}
+
+model UserRefreshSession {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String   @unique @map("refresh_token_hash")
+  expiresAt        DateTime @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("user_refresh_sessions")
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
 }
 
 model Address {
@@ -181,6 +198,9 @@ model Order {
   id                    String           @id // Custom: INV-20250425-001
   userId                String           @map("user_id")
   user                  User             @relation(fields: [userId], references: [id])
+  customerName          String?          @map("customer_name")
+  customerEmail         String?          @map("customer_email")
+  customerPhone         String?          @map("customer_phone")
   status                OrderStatus      @default(PENDING)
   totalAmount           Decimal          @map("total_amount") @db.Decimal(15, 2)
   shippingCost          Decimal          @map("shipping_cost") @db.Decimal(15, 2)

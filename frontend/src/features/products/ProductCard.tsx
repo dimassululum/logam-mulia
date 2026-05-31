@@ -1,7 +1,7 @@
 import Link from 'next/link'
-import { Star } from 'lucide-react'
+import { BadgePercent, Star } from 'lucide-react'
 import { Product } from '@/core/types'
-import { formatRupiah } from '@/core/lib/utils'
+import { cn, formatRupiah } from '@/core/lib/utils'
 import { formatCompactDiscount, getProductVoucherPreview, type StorefrontVoucher } from './voucher-pricing'
 
 interface ProductCardProps {
@@ -22,9 +22,17 @@ export default function ProductCard({ product, vouchers = [] }: ProductCardProps
   const isOutOfStock = product.stock === 0
   const voucherPreview = getProductVoucherPreview(product, vouchers)
   const hasVoucherPrice = voucherPreview.discountAmount > 0
+  const discountText = `Rp ${formatCompactDiscount(voucherPreview.discountAmount)}`
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-navy-100/80 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-navy-100/70">
+    <article
+      className={cn(
+        'group overflow-hidden rounded-2xl border bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-xl',
+        hasVoucherPrice
+          ? 'border-2 border-gold-400 bg-[linear-gradient(180deg,#FFF1C2_0%,#FFFFFF_44%,#FFF9EA_100%)] shadow-[0_18px_42px_-18px_rgba(212,168,75,0.9)] ring-2 ring-gold-100/90 hover:shadow-[0_22px_52px_-18px_rgba(184,145,47,0.95)]'
+          : 'border-navy-100/80 hover:shadow-navy-100/70',
+      )}
+    >
       <Link href={`/products/${product.slug}`} aria-label={`Lihat detail ${product.name}`} className="block">
         <div className="relative aspect-square bg-navy-900 overflow-hidden">
           <img
@@ -32,9 +40,25 @@ export default function ProductCard({ product, vouchers = [] }: ProductCardProps
             alt={product.name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
-          <div className="absolute right-3 top-3 max-w-[75%] truncate rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-navy-900 shadow-sm">
+          <div
+            className={cn(
+              'absolute right-3 top-3 truncate rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-navy-900 shadow-sm',
+              hasVoucherPrice ? 'max-w-[58%]' : 'max-w-[75%]',
+            )}
+          >
             {product.category}
           </div>
+          {hasVoucherPrice ? (
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-r from-gold-500 via-gold-400 to-gold-300 px-3 py-2 text-[11px] font-extrabold uppercase text-navy-900 shadow-lg shadow-navy-900/20">
+              <span className="inline-flex items-center gap-1">
+                <BadgePercent className="h-3.5 w-3.5" />
+                Promo
+              </span>
+              <span className="shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] text-[#2E7D32]">
+                -{discountText}
+              </span>
+            </div>
+          ) : null}
           {isOutOfStock && (
             <div className="absolute inset-0 bg-navy-900/60 backdrop-blur-sm flex items-center justify-center">
               <span className="text-sm font-semibold text-white bg-navy-900 px-3 py-1.5 rounded-full">
@@ -60,23 +84,23 @@ export default function ProductCard({ product, vouchers = [] }: ProductCardProps
             {product.name}
           </h3>
 
-          <div className="pt-1 flex flex-col justify-end min-h-[40px]">
+          <div
+            className={cn(
+              'pt-1 flex flex-col justify-end min-h-[40px]',
+              hasVoucherPrice && 'px-0.5',
+            )}
+          >
             {hasVoucherPrice ? (
-              <p className="mb-0.5 text-[11px] font-semibold leading-tight text-[#888888] line-through">
+              <p className="mb-1 text-[11px] font-semibold leading-tight text-[#888888] line-through">
                 {formatRupiah(voucherPreview.originalPrice)}
               </p>
             ) : (
               <div className="h-[11px] mb-0.5" aria-hidden="true" />
             )}
             <div className="flex flex-wrap items-center gap-1.5">
-              <p className="text-[17px] font-bold text-gold-600 leading-tight">
+              <p className="text-[18px] font-extrabold text-gold-700 leading-tight">
                 {formatRupiah(voucherPreview.finalPrice)}
               </p>
-              {hasVoucherPrice ? (
-                <span className="rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-bold leading-none text-[#2E7D32]">
-                  -Rp {formatCompactDiscount(voucherPreview.discountAmount)}
-                </span>
-              ) : null}
             </div>
           </div>
         </div>

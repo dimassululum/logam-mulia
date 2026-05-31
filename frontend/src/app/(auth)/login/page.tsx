@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import LoginForm from '@/features/auth/LoginForm'
-import { MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { AUTH_COOKIE_MAX_AGE_SECONDS, MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
 import { apiClient } from '@/core/lib/api-client'
 
 export default function LoginPage() {
@@ -35,9 +35,9 @@ export default function LoginPage() {
       window.dispatchEvent(new Event('lm-auth-updated'))
 
       // Store in cookies for compatibility with existing middleware if any
-      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=28800; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=28800; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=28800; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
 
       if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
         router.push('/admin')

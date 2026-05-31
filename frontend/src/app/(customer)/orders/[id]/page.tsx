@@ -23,6 +23,7 @@ import Card from '@/shared/ui/Card'
 import OrderWhatsappButton from '@/features/orders/OrderWhatsappButton'
 import { getOrderBadgeVariant, type AdminOrderDetailRecord } from '@/features/admin/admin-management-data'
 import { fetchCustomerOrder } from '@/features/orders/order-api'
+import { ShippingCarrierLabel } from '@/features/shipping/shipping-carriers'
 
 function formatOrderDate(value: string) {
   const parts = new Intl.DateTimeFormat('id-ID', {
@@ -292,7 +293,7 @@ export default function OrderDetailPage() {
                     </>
                   ) : (
                     <>
-                      <MetaRow label="Kurir" value={order.fulfillmentDetail.courier ?? order.shippingMethod} strong />
+                      <MetaRow label="Kurir" value={<ShippingCarrierLabel carrier={order.fulfillmentDetail.courier ?? order.shippingMethod} />} strong />
                       <MetaRow label="Layanan" value={order.fulfillmentDetail.serviceLabel ?? order.shippingMethod} />
                       <MetaRow label="Resi" value={order.trackingNumber || '-'} mono />
                       <MetaRow label="Nama Penerima" value={order.recipientDetail.name} />

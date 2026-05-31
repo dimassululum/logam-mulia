@@ -15,6 +15,7 @@ import { FilterInput, FilterSelect, adminSelectClassName } from '@/features/admi
 import { FilterModal, FilterToggleButton, IconActionButton, InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Badge, Button, Modal } from '@/shared/ui'
+import { SHIPPING_CARRIERS, ShippingCarrierLabel, ShippingCarrierLogo } from '@/features/shipping/shipping-carriers'
 
 const ORDER_PAGE_SIZE = 20
 
@@ -31,6 +32,12 @@ const UPDATE_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: 'selesai', label: 'Selesai' },
 ]
 
+const SHIPPING_FILTER_OPTIONS = [
+  { value: 'all', label: 'Semua pengiriman' },
+  ...SHIPPING_CARRIERS.map((carrier) => ({ value: carrier.code, label: carrier.label, carrier: carrier.code })),
+  { value: 'Self Pickup', label: 'Self Pickup' },
+]
+
 const STATUS_GUIDE: { status: OrderStatus; description: string }[] = [
   { status: 'pending', description: 'Pengguna belum bayar.' },
   { status: 'success', description: 'Pengguna sudah bayar, namun barang belum diproses.' },
@@ -39,16 +46,87 @@ const STATUS_GUIDE: { status: OrderStatus; description: string }[] = [
   { status: 'selesai', description: 'Pesanan berhasil dikirim dengan ekspedisi atau diberikan di butik yang dipilih.' },
 ]
 
-function buildWhatsappUrl(phone: string) {
+function normalizeWhatsappPhone(phone: string) {
   const digits = phone.replace(/\D/g, '')
   if (!digits) return null
-  const normalized = digits.startsWith('0') ? `62${digits.slice(1)}` : digits.startsWith('8') ? `62${digits}` : digits
+  return digits.startsWith('0') ? `62${digits.slice(1)}` : digits.startsWith('8') ? `62${digits}` : digits
+}
+
+function buildWhatsappUrl(phone: string) {
+  const normalized = normalizeWhatsappPhone(phone)
+  return normalized ? `https://wa.me/${normalized}` : null
+}
+
+function buildWhatsappBusinessUrl(phone: string) {
+  const normalized = normalizeWhatsappPhone(phone)
+  if (!normalized) return null
+  if (typeof navigator === 'undefined') return `https://wa.me/${normalized}`
+
+  const userAgent = navigator.userAgent.toLowerCase()
+  if (/android/.test(userAgent)) {
+    return `intent://send?phone=${normalized}#Intent;scheme=whatsapp;package=com.whatsapp.w4b;end`
+  }
+  if (/iphone|ipad|ipod/.test(userAgent)) {
+    return `whatsapp-business://send?phone=${normalized}`
+  }
+
   return `https://wa.me/${normalized}`
+}
+
+function openWhatsappBusiness(phone: string) {
+  const url = buildWhatsappBusinessUrl(phone)
+  if (!url) return
+  if (url.startsWith('https://')) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  window.location.href = url
 }
 
 function getPaymentAwareStatusLabel(order: AdminOrderRecord) {
   if (order.status === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
   return getOrderStatusLabel(order.status)
+}
+
+function ShippingFilterPicker({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium text-navy-700">Pengiriman</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {SHIPPING_FILTER_OPTIONS.map((option) => {
+          const selected = value === option.value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                selected
+                  ? 'border-gold-400 bg-gold-50 text-navy-900'
+                  : 'border-navy-100 bg-white text-navy-700 hover:border-gold-200 hover:bg-gold-50/50'
+              }`}
+              aria-pressed={selected}
+            >
+              {'carrier' in option && option.carrier ? (
+                <ShippingCarrierLogo carrier={option.carrier} className="h-8 w-12" />
+              ) : (
+                <span className="flex h-8 w-12 shrink-0 items-center justify-center rounded-md border border-navy-100 bg-navy-50 text-[10px] font-bold uppercase tracking-wide text-navy-500">
+                  {option.value === 'all' ? 'All' : 'Pickup'}
+                </span>
+              )}
+              <span className="min-w-0 truncate">{option.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
 }
 
 export default function OrderManagementScreen() {
@@ -181,7 +259,9 @@ export default function OrderManagementScreen() {
         </div>,
         <span key={`${order.id}-total`} className="font-semibold text-navy-900">{formatRupiah(order.totalAmount)}</span>,
         <div key={`${order.id}-shipping`}>
-          <p className="font-medium text-navy-900">{order.shippingMethod}</p>
+          <p className="font-medium text-navy-900">
+            <ShippingCarrierLabel carrier={order.shippingMethod} />
+          </p>
           <p className="mt-1 text-xs text-navy-500">{order.trackingNumber || '-'}</p>
         </div>,
         <Badge key={`${order.id}-status`} variant={getOrderBadgeVariant(order.status)} label={getPaymentAwareStatusLabel(order)} />,
@@ -189,15 +269,28 @@ export default function OrderManagementScreen() {
           {whatsappUrl ? (
             <a
               href={whatsappUrl}
-              target="_blank"
+              onClick={(event) => {
+                event.preventDefault()
+                openWhatsappBusiness(order.customerPhone)
+              }}
               rel="noopener noreferrer"
-              aria-label={`WhatsApp ${order.customerName}`}
-              title={`WhatsApp ${order.customerName}`}
+              aria-label={`WhatsApp Business ${order.customerName}`}
+              title={`WhatsApp Business ${order.customerName}`}
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-600 transition-colors hover:bg-emerald-50"
             >
               <MessageCircle className="h-4 w-4" />
             </a>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-label={`WhatsApp ${order.customerName} belum tersedia`}
+              title="Nomor WhatsApp belum tersedia"
+              className="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-lg border border-navy-100 text-navy-300"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
+          )}
           <Link
             href={`/admin/orders/${order.id}`}
             aria-label={`Detail ${order.id}`}
@@ -221,22 +314,37 @@ export default function OrderManagementScreen() {
             </div>
             <div>
               <p className="text-xs uppercase tracking-[0.14em] text-navy-400">Pengiriman</p>
-              <p className="mt-1 font-medium text-navy-700">{order.shippingMethod}</p>
+              <p className="mt-1 font-medium text-navy-700">
+                <ShippingCarrierLabel carrier={order.shippingMethod} />
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {whatsappUrl ? (
               <a
                 href={whatsappUrl}
-                target="_blank"
+                onClick={(event) => {
+                  event.preventDefault()
+                  openWhatsappBusiness(order.customerPhone)
+                }}
                 rel="noopener noreferrer"
-                aria-label={`WhatsApp ${order.customerName}`}
-                title={`WhatsApp ${order.customerName}`}
+                aria-label={`WhatsApp Business ${order.customerName}`}
+                title={`WhatsApp Business ${order.customerName}`}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-emerald-200 text-emerald-600 transition-colors hover:bg-emerald-50"
               >
                 <MessageCircle className="h-4 w-4" />
               </a>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                disabled
+                aria-label={`WhatsApp ${order.customerName} belum tersedia`}
+                title="Nomor WhatsApp belum tersedia"
+                className="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-lg border border-navy-100 text-navy-300"
+              >
+                <MessageCircle className="h-4 w-4" />
+              </button>
+            )}
             <Link
               href={`/admin/orders/${order.id}`}
               aria-label={`Detail ${order.id}`}
@@ -313,7 +421,7 @@ export default function OrderManagementScreen() {
       <FilterModal isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Filter Pesanan">
         <div className="grid gap-4">
           <FilterSelect label="Status" value={statusFilter} onChange={handleStatusFilterChange} options={[{ value: 'all', label: 'Semua status' }, ...STATUS_FILTER_OPTIONS]} />
-          <FilterSelect label="Pengiriman" value={shippingFilter} onChange={handleShippingFilterChange} options={[{ value: 'all', label: 'Semua pengiriman' }, { value: 'JNE', label: 'JNE' }, { value: 'POS', label: 'POS' }, { value: 'TIKI', label: 'TIKI' }, { value: 'Self Pickup', label: 'Self Pickup' }]} />
+          <ShippingFilterPicker value={shippingFilter} onChange={handleShippingFilterChange} />
         </div>
       </FilterModal>
 

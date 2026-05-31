@@ -1,11 +1,13 @@
 import axios from 'axios';
 import { resolvePublicApiBaseUrl } from './public-url';
+import { MOCK_AUTH_COOKIES } from './mock-auth';
 
 function resolveApiBaseUrl() {
   return resolvePublicApiBaseUrl();
 }
 
 const baseURL = resolveApiBaseUrl();
+let refreshAccessTokenPromise: Promise<string> | null = null;
 
 export const apiClient = axios.create({
   baseURL,
@@ -13,6 +15,29 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+function clearBrowserAuthSession() {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user_name');
+  localStorage.removeItem('user_email');
+  document.cookie = `${MOCK_AUTH_COOKIES.role}=; path=/; max-age=0; SameSite=Lax`;
+  document.cookie = `${MOCK_AUTH_COOKIES.name}=; path=/; max-age=0; SameSite=Lax`;
+  document.cookie = `${MOCK_AUTH_COOKIES.email}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+async function refreshAccessToken(refreshToken: string) {
+  if (!refreshAccessTokenPromise) {
+    refreshAccessTokenPromise = axios
+      .post(`${baseURL}/auth/refresh-token`, { refreshToken })
+      .then(({ data }) => data.data.accessToken)
+      .finally(() => {
+        refreshAccessTokenPromise = null;
+      });
+  }
+
+  return refreshAccessTokenPromise;
+}
 
 // Interceptor for attaching tokens
 apiClient.interceptors.request.use((config) => {
@@ -38,8 +63,7 @@ apiClient.interceptors.response.use(
         originalRequest._retry = true;
 
         try {
-          const { data } = await axios.post(`${baseURL}/auth/refresh-token`, { refreshToken });
-          const nextAccessToken = data.data.accessToken;
+          const nextAccessToken = await refreshAccessToken(refreshToken);
 
           localStorage.setItem('access_token', nextAccessToken);
           originalRequest.headers = originalRequest.headers || {};
@@ -47,13 +71,14 @@ apiClient.interceptors.response.use(
 
           return apiClient(originalRequest);
         } catch {
-          localStorage.removeItem('refresh_token');
+          clearBrowserAuthSession();
         }
       }
 
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      window.location.href = '/login';
+      clearBrowserAuthSession();
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
 
     return Promise.reject(error);

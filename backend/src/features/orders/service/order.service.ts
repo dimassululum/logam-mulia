@@ -20,6 +20,12 @@ const orderListInclude = {
   items: { select: { id: true, productName: true, quantity: true }, orderBy: { id: 'asc' } },
 } satisfies Prisma.OrderInclude;
 
+const STATIC_SHIPPING_RATES = {
+  JNE: 15000,
+  JNT: 15000,
+  PAXEL: 50000,
+} as const;
+
 interface GetAllOrdersInput {
   page: number;
   limit: number;
@@ -77,6 +83,20 @@ function formatRupiah(value: number) {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function normalizeShippingCourier(value?: string | null) {
+  const normalized = (value || '').trim().toUpperCase();
+  if (normalized.includes('J&T') || normalized === 'JNT') return 'JNT';
+  if (normalized.includes('PAXEL')) return 'PAXEL';
+  if (normalized.includes('JNE')) return 'JNE';
+  return normalized;
+}
+
+function getStaticShippingCost(deliveryType: CreateOrderInput['deliveryType'], courier?: string | null) {
+  if (deliveryType === 'butik') return 0;
+  const normalizedCourier = normalizeShippingCourier(courier);
+  return STATIC_SHIPPING_RATES[normalizedCourier as keyof typeof STATIC_SHIPPING_RATES] ?? 0;
 }
 
 function calculateVoucherDiscount(
@@ -474,11 +494,15 @@ export function mapOrder(order: any) {
   const grandTotalAmount = toMoney(order.grandTotal);
   const deliveryMethod = order.shippingCourier === 'SELFPICKUP' ? 'self_pickup' : 'delivery';
 
+  const customerName = order.customerName || order.user.name;
+  const customerEmail = order.customerEmail || order.user.email;
+  const customerPhone = order.customerPhone || order.user.phone || '';
+
   return {
     id: order.id,
-    customerName: order.user.name,
-    customerEmail: order.user.email,
-    customerPhone: order.user.phone || '',
+    customerName,
+    customerEmail,
+    customerPhone,
     primaryItem: getPrimaryItem(order),
     itemCount: getItemCount(order),
     totalAmount: grandTotalAmount,
@@ -508,14 +532,14 @@ export function mapOrder(order: any) {
       totalPrice: toMoney(item.subtotal),
     })),
     customerDetail: {
-      name: order.user.name,
-      phone: order.user.phone || '',
-      email: order.user.email,
+      name: customerName,
+      phone: customerPhone,
+      email: customerEmail,
     },
     recipientDetail: {
-      name: order.user.name,
-      phone: order.user.phone || '',
-      email: order.user.email,
+      name: customerName,
+      phone: customerPhone,
+      email: customerEmail,
       province: order.shippingProvince || '-',
       city: order.shippingCity || '-',
       district: order.shippingDistrict || '-',
@@ -551,12 +575,15 @@ export function mapOrder(order: any) {
 
 function mapOrderList(order: any) {
   const deliveryMethod = order.shippingCourier === 'SELFPICKUP' ? 'self_pickup' : 'delivery';
+  const customerName = order.customerName || order.user.name;
+  const customerEmail = order.customerEmail || order.user.email;
+  const customerPhone = order.customerPhone || order.user.phone || '';
 
   return {
     id: order.id,
-    customerName: order.user.name,
-    customerEmail: order.user.email,
-    customerPhone: order.user.phone || '',
+    customerName,
+    customerEmail,
+    customerPhone,
     primaryItem: getPrimaryItem(order),
     itemCount: getItemCount(order),
     totalAmount: toMoney(order.grandTotal),
@@ -581,6 +608,9 @@ function buildOrderWhere(input: Pick<GetAllOrdersInput, 'search' | 'status' | 's
   if (search) {
     where.OR = [
       { id: { contains: search, mode: 'insensitive' } },
+      { customerName: { contains: search, mode: 'insensitive' } },
+      { customerEmail: { contains: search, mode: 'insensitive' } },
+      { customerPhone: { contains: search, mode: 'insensitive' } },
       { user: { name: { contains: search, mode: 'insensitive' } } },
       { user: { email: { contains: search, mode: 'insensitive' } } },
       { user: { phone: { contains: search, mode: 'insensitive' } } },
@@ -657,6 +687,18 @@ export async function createOrder(input: CreateOrderInput) {
   const user = await prisma.user.findUnique({ where: { email: input.email.trim().toLowerCase() } });
   if (!user) throw new BadRequestError('Data customer belum tersimpan. Ulangi dari halaman checkout.');
   const paymentMethod = await resolveActivePaymentMethodForOrder(input.paymentMethodCode);
+  const productIds = Array.from(new Set(input.items.map((item) => item.productId)));
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, isActive: true },
+  });
+  const productStatusById = new Map(products.map((product) => [product.id, product.isActive]));
+  const unavailableItems = input.items.filter((item) => productStatusById.get(item.productId) !== true);
+
+  if (unavailableItems.length > 0) {
+    const itemNames = unavailableItems.map((item) => item.productName).join(', ');
+    throw new BadRequestError(`Produk ${itemNames} sudah tidak tersedia. Perbarui keranjang lalu coba checkout lagi.`);
+  }
 
   const subtotal = input.items.reduce((sum, item) => sum + item.priceAtPurchase * item.quantity, 0);
   const id = nextOrderId();
@@ -667,15 +709,19 @@ export async function createOrder(input: CreateOrderInput) {
       subtotal,
       roundMoney(automaticVouchers.reduce((sum, applied) => sum + applied.discountAmount, 0))
     );
-    const grandTotal = Math.max(0, subtotal + input.shippingCost - discountAmount);
+    const shippingCost = getStaticShippingCost(input.deliveryType, input.shippingCourier);
+    const grandTotal = Math.max(0, subtotal + shippingCost - discountAmount);
 
     const createdOrder = await tx.order.create({
       data: {
         id,
         userId: user.id,
         status: OrderStatus.PENDING,
+        customerName: input.customerName,
+        customerEmail: input.email.trim().toLowerCase(),
+        customerPhone: input.customerPhone || user.phone || null,
         totalAmount: subtotal,
-        shippingCost: input.shippingCost,
+        shippingCost,
         discountAmount,
         grandTotal,
         paymentMethodCode: paymentMethod.code,
@@ -736,12 +782,17 @@ export async function createOrder(input: CreateOrderInput) {
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput) {
   const existing = await prisma.order.findUnique({ where: { id } });
   if (!existing) throw new NotFoundError('Pesanan');
+  const now = new Date();
 
   const order = await prisma.order.update({
     where: { id },
     data: {
       status: input.status,
       ...(input.trackingNumber && { trackingNumber: input.trackingNumber }),
+      ...(input.status === OrderStatus.CANCELLED && {
+        cancelledAt: now,
+        cancelReason: 'Dibatalkan oleh admin.',
+      }),
       statusLogs: {
         create: {
           status: input.status,

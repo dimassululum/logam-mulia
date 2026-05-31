@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import RegisterForm from '@/features/auth/RegisterForm'
-import { MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
+import { AUTH_COOKIE_MAX_AGE_SECONDS, MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
 import { apiClient } from '@/core/lib/api-client'
 
 export default function RegisterPage() {
@@ -25,9 +25,9 @@ export default function RegisterPage() {
       localStorage.setItem('user_name', user.name)
       localStorage.setItem('user_email', user.email)
       window.dispatchEvent(new Event('lm-auth-updated'))
-      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=28800; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=28800; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=28800; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
+      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
 
       const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/'
       router.push(redirectTo)

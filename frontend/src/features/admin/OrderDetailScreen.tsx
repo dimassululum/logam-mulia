@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
-import { ArrowLeft, CheckCircle2, CreditCard, ExternalLink, IdCard, Package, Store, Truck, UserRound } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CreditCard, ExternalLink, IdCard, Package, Store, Truck, UserRound, XCircle } from 'lucide-react'
 import type { OrderStatus } from '@/core/types'
 import { cn, formatRupiah } from '@/core/lib/utils'
 import { resolvePublicAssetUrl } from '@/core/lib/public-url'
@@ -11,9 +11,10 @@ import {
   getOrderBadgeVariant,
   type AdminOrderDetailRecord,
 } from '@/features/admin/admin-management-data'
-import { confirmAdminOrderPayment, fetchAdminOrder } from '@/features/orders/order-api'
+import { confirmAdminOrderPayment, fetchAdminOrder, updateAdminOrderStatus } from '@/features/orders/order-api'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
 import { AdminPageHeader, Badge, Button, Card, Modal } from '@/shared/ui'
+import { ShippingCarrierLabel } from '@/features/shipping/shipping-carriers'
 
 function normalizeOrderStatus(status: OrderStatus): OrderStatus {
   if (['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(status)) return 'success'
@@ -269,12 +270,16 @@ function getPublicPaymentProofUrl(order: AdminOrderDetailRecord) {
 function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRecord }) {
   const [isDocumentOpen, setIsDocumentOpen] = useState(false)
   const [isPaymentProofOpen, setIsPaymentProofOpen] = useState(false)
+  const [isCancelOrderOpen, setIsCancelOrderOpen] = useState(false)
   const [order, setOrder] = useState(initialOrder)
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false)
+  const [isCancelingOrder, setIsCancelingOrder] = useState(false)
   const [paymentActionError, setPaymentActionError] = useState('')
+  const [cancelActionError, setCancelActionError] = useState('')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
   const publicKtpUrl = getPublicKtpUrl(order)
   const publicPaymentProofUrl = getPublicPaymentProofUrl(order)
+  const canCancelOrder = !['canceled', 'refund', 'selesai'].includes(normalizeOrderStatus(order.status))
 
   useEffect(() => {
     if (!toast) return
@@ -297,6 +302,22 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
     }
   }
 
+  async function handleCancelOrder() {
+    setIsCancelingOrder(true)
+    setCancelActionError('')
+    try {
+      const updated = await updateAdminOrderStatus(order.id, 'canceled')
+      setOrder(updated)
+      setIsCancelOrderOpen(false)
+      setToast({ message: 'Pesanan berhasil dibatalkan.', tone: 'success' })
+    } catch {
+      setCancelActionError('Gagal membatalkan pesanan.')
+      setToast({ message: 'Gagal membatalkan pesanan.', tone: 'error' })
+    } finally {
+      setIsCancelingOrder(false)
+    }
+  }
+
   return (
     <div className="relative -m-4 min-h-[calc(100vh-4rem)] space-y-4 overflow-hidden bg-white p-4 sm:-m-6 sm:p-6 lg:-mx-8 lg:-my-6 lg:px-8 lg:py-6">
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
@@ -314,12 +335,20 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
         <AdminPageHeader
           title="Detail Pesanan"
           actions={
-            <Link href="/admin/orders">
-              <Button variant="ghost">
-                <ArrowLeft className="h-4 w-4" />
-                Kembali
-              </Button>
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {canCancelOrder ? (
+                <Button variant="secondary" onClick={() => setIsCancelOrderOpen(true)} className="border-red-200 text-red-600 hover:bg-red-50">
+                  <XCircle className="h-4 w-4" />
+                  Cancel Order
+                </Button>
+              ) : null}
+              <Link href="/admin/orders">
+                <Button variant="ghost">
+                  <ArrowLeft className="h-4 w-4" />
+                  Kembali
+                </Button>
+              </Link>
+            </div>
           }
         />
 
@@ -359,119 +388,119 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
             </div>
           </SectionCard>
 
-        <SectionCard title="Detail Pembayaran" icon={<CreditCard className="h-5 w-5" />}>
-          <div className="space-y-3">
-            <MetaRow label="Metode" value={order.paymentMethod} strong />
-            <MetaRow
-              label="Status Pembayaran"
-              value={<Badge variant={getOrderBadgeVariant(order.status)} label={getPaymentStatusHeadline(order)} />}
-            />
-            <MetaRow
-              label="Bukti Diupload"
-              value={order.paymentProofUploadedAt ? formatDetailDate(order.paymentProofUploadedAt) : '-'}
-            />
-            <MetaRow label="Tanggal Order" value={formatDetailDate(order.createdAt)} />
-            <MetaRow label="Terakhir Diperbarui" value={formatDetailDate(order.updatedAt)} />
-            <div className="rounded-2xl border border-navy-100 bg-white/50 p-4">
-              {publicPaymentProofUrl ? (
-                <div className="space-y-3">
-                  <div className="relative h-56 overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
-                    <Image src={publicPaymentProofUrl} alt={`Bukti pembayaran ${order.id}`} fill unoptimized sizes="420px" className="object-contain" />
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Button variant="secondary" size="sm" onClick={() => setIsPaymentProofOpen(true)}>
-                      <ExternalLink className="h-4 w-4" />
-                      Lihat Bukti
-                    </Button>
-                    {normalizeOrderStatus(order.status) === 'pending' ? (
-                      <Button size="sm" onClick={handleConfirmPayment} isLoading={isConfirmingPayment}>
-                        <CheckCircle2 className="h-4 w-4" />
-                        Konfirmasi Pembayaran
-                      </Button>
-                    ) : null}
-                  </div>
-                  {paymentActionError ? <p className="text-sm font-medium text-red-600">{paymentActionError}</p> : null}
-                </div>
+          <SectionCard
+            title="Metode Penerimaan Barang"
+            icon={order.fulfillmentDetail.method === 'self_pickup' ? <Store className="h-5 w-5" /> : <Truck className="h-5 w-5" />}
+          >
+            <div className="mb-4">
+              <Badge
+                variant={order.fulfillmentDetail.method === 'self_pickup' ? 'gold' : 'navy'}
+                label={order.fulfillmentDetail.method === 'self_pickup' ? 'Pengambilan di Butik' : 'Dikirim via Ekspedisi'}
+              />
+            </div>
+
+            <div className="space-y-3">
+              {order.fulfillmentDetail.method === 'self_pickup' ? (
+                <>
+                  <MetaRow label="Butik" value={order.fulfillmentDetail.boutiqueName ?? '-'} strong />
+                  <MetaRow label="Alamat Butik" value={order.fulfillmentDetail.boutiqueAddress ?? '-'} />
+                  <MetaRow label="Kode Pickup" value={order.fulfillmentDetail.pickupCode ?? '-'} mono strong />
+                  <MetaRow label="Jadwal Pickup" value={order.fulfillmentDetail.pickupWindow ?? '-'} />
+                  <MetaRow label="PIC Butik" value={order.fulfillmentDetail.contactPerson ?? '-'} />
+                  <MetaRow label="Catatan" value={order.fulfillmentDetail.note ?? '-'} />
+                </>
               ) : (
-                <p className="text-sm text-navy-600">Bukti pembayaran belum diupload customer.</p>
+                <>
+                  <MetaRow label="Kurir" value={<ShippingCarrierLabel carrier={order.fulfillmentDetail.courier ?? order.shippingMethod} />} strong />
+                  <MetaRow label="Layanan" value={order.fulfillmentDetail.serviceLabel ?? order.shippingMethod} />
+                  <MetaRow label="Nama Penerima" value={order.recipientDetail.name} />
+                  <MetaRow label="Telepon" value={order.recipientDetail.phone} />
+                  <MetaRow label="Alamat" value={order.recipientDetail.address} />
+                  <MetaRow
+                    label="Wilayah"
+                    value={`${order.recipientDetail.village}, ${order.recipientDetail.district}, ${order.recipientDetail.city}, ${order.recipientDetail.province}`}
+                  />
+                  <MetaRow label="Kode Pos" value={order.recipientDetail.postalCode} mono />
+                </>
               )}
             </div>
-            <div className="rounded-2xl border border-white/45 bg-white/35 p-4 backdrop-blur-[1px]">
-              <div className="space-y-3">
-                <SummaryRow label="Subtotal Produk" value={formatRupiah(order.subtotalAmount)} />
-                <SummaryRow label="Biaya Pengiriman" value={formatRupiah(order.shippingFee)} />
-                <SummaryRow label="Voucher" value={formatRupiah(order.voucherAmount)} negative />
-                <div className="border-t border-navy-200" />
-                <SummaryRow label="Total Tagihan" value={formatRupiah(order.grandTotalAmount)} emphasis />
-              </div>
-            </div>
-          </div>
-        </SectionCard>
+          </SectionCard>
 
-        <SectionCard title="Detail Produk" icon={<Package className="h-5 w-5" />}>
-          <div className="space-y-3">
-            {order.lineItems.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-navy-100 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 gap-3">
-                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
-                      <OrderItemImage src={item.productImage} alt={item.productName} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-navy-900">{item.productName}</p>
-                      <div className="mt-2 space-y-1 text-sm text-navy-600">
-                        <p>Jumlah: {item.quantity}</p>
-                        <p>Harga Satuan: {formatRupiah(item.unitPrice)}</p>
+          <SectionCard title="Detail Produk" icon={<Package className="h-5 w-5" />}>
+            <div className="space-y-3">
+              {order.lineItems.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-navy-100 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
+                        <OrderItemImage src={item.productImage} alt={item.productName} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-navy-900">{item.productName}</p>
+                        <div className="mt-2 space-y-1 text-sm text-navy-600">
+                          <p>Jumlah: {item.quantity}</p>
+                          <p>Harga Satuan: {formatRupiah(item.unitPrice)}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="sm:text-right">
-                    <p className="text-xs uppercase tracking-[0.16em] text-navy-500">Total Harga</p>
-                    <p className="mt-1 text-lg font-semibold text-navy-900">{formatRupiah(item.totalPrice)}</p>
+                    <div className="sm:text-right">
+                      <p className="text-xs uppercase tracking-[0.16em] text-navy-500">Total Harga</p>
+                      <p className="mt-1 text-lg font-semibold text-navy-900">{formatRupiah(item.totalPrice)}</p>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Detail Pembayaran" icon={<CreditCard className="h-5 w-5" />}>
+            <div className="space-y-3">
+              <MetaRow label="Metode" value={order.paymentMethod} strong />
+              <MetaRow
+                label="Status Pembayaran"
+                value={<Badge variant={getOrderBadgeVariant(order.status)} label={getPaymentStatusHeadline(order)} />}
+              />
+              <MetaRow
+                label="Bukti Diupload"
+                value={order.paymentProofUploadedAt ? formatDetailDate(order.paymentProofUploadedAt) : '-'}
+              />
+              <MetaRow label="Tanggal Order" value={formatDetailDate(order.createdAt)} />
+              <MetaRow label="Terakhir Diperbarui" value={formatDetailDate(order.updatedAt)} />
+              <div className="rounded-2xl border border-navy-100 bg-white/50 p-4">
+                {publicPaymentProofUrl ? (
+                  <div className="space-y-3">
+                    <div className="relative h-56 overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
+                      <Image src={publicPaymentProofUrl} alt={`Bukti pembayaran ${order.id}`} fill unoptimized sizes="420px" className="object-contain" />
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button variant="secondary" size="sm" onClick={() => setIsPaymentProofOpen(true)}>
+                        <ExternalLink className="h-4 w-4" />
+                        Lihat Bukti
+                      </Button>
+                      {normalizeOrderStatus(order.status) === 'pending' ? (
+                        <Button size="sm" onClick={handleConfirmPayment} isLoading={isConfirmingPayment}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Konfirmasi Pembayaran
+                        </Button>
+                      ) : null}
+                    </div>
+                    {paymentActionError ? <p className="text-sm font-medium text-red-600">{paymentActionError}</p> : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-navy-600">Bukti pembayaran belum diupload customer.</p>
+                )}
               </div>
-            ))}
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="Metode Penerimaan Barang"
-          icon={order.fulfillmentDetail.method === 'self_pickup' ? <Store className="h-5 w-5" /> : <Truck className="h-5 w-5" />}
-        >
-          <div className="mb-4">
-            <Badge
-              variant={order.fulfillmentDetail.method === 'self_pickup' ? 'gold' : 'navy'}
-              label={order.fulfillmentDetail.method === 'self_pickup' ? 'Pengambilan di Butik' : 'Dikirim via Ekspedisi'}
-            />
-          </div>
-
-          <div className="space-y-3">
-            {order.fulfillmentDetail.method === 'self_pickup' ? (
-              <>
-                <MetaRow label="Butik" value={order.fulfillmentDetail.boutiqueName ?? '-'} strong />
-                <MetaRow label="Alamat Butik" value={order.fulfillmentDetail.boutiqueAddress ?? '-'} />
-                <MetaRow label="Kode Pickup" value={order.fulfillmentDetail.pickupCode ?? '-'} mono strong />
-                <MetaRow label="Jadwal Pickup" value={order.fulfillmentDetail.pickupWindow ?? '-'} />
-                <MetaRow label="PIC Butik" value={order.fulfillmentDetail.contactPerson ?? '-'} />
-                <MetaRow label="Catatan" value={order.fulfillmentDetail.note ?? '-'} />
-              </>
-            ) : (
-              <>
-                <MetaRow label="Kurir" value={order.fulfillmentDetail.courier ?? order.shippingMethod} strong />
-                <MetaRow label="Layanan" value={order.fulfillmentDetail.serviceLabel ?? order.shippingMethod} />
-                <MetaRow label="Nama Penerima" value={order.recipientDetail.name} />
-                <MetaRow label="Telepon" value={order.recipientDetail.phone} />
-                <MetaRow label="Alamat" value={order.recipientDetail.address} />
-                <MetaRow
-                  label="Wilayah"
-                  value={`${order.recipientDetail.village}, ${order.recipientDetail.district}, ${order.recipientDetail.city}, ${order.recipientDetail.province}`}
-                />
-                <MetaRow label="Kode Pos" value={order.recipientDetail.postalCode} mono />
-              </>
-            )}
-          </div>
-        </SectionCard>
+              <div className="rounded-2xl border border-white/45 bg-white/35 p-4 backdrop-blur-[1px]">
+                <div className="space-y-3">
+                  <SummaryRow label="Subtotal Produk" value={formatRupiah(order.subtotalAmount)} />
+                  <SummaryRow label="Biaya Pengiriman" value={formatRupiah(order.shippingFee)} />
+                  <SummaryRow label="Voucher" value={formatRupiah(order.voucherAmount)} negative />
+                  <div className="border-t border-navy-200" />
+                  <SummaryRow label="Total Tagihan" value={formatRupiah(order.grandTotalAmount)} emphasis />
+                </div>
+              </div>
+            </div>
+          </SectionCard>
         </div>
       </div>
 
@@ -489,6 +518,24 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
         ) : (
           <p className="text-sm text-navy-600">Bukti pembayaran belum tersedia.</p>
         )}
+      </Modal>
+
+      <Modal isOpen={isCancelOrderOpen} onClose={() => setIsCancelOrderOpen(false)} title="Cancel Order" size="md">
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-navy-600">
+            Pesanan #{order.id} akan diubah menjadi canceled. Gunakan aksi ini untuk pesanan duplikat atau pesanan yang memang tidak perlu diproses.
+          </p>
+          {cancelActionError ? <p className="text-sm font-medium text-red-600">{cancelActionError}</p> : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setIsCancelOrderOpen(false)} disabled={isCancelingOrder}>
+              Batal
+            </Button>
+            <Button variant="danger" onClick={handleCancelOrder} isLoading={isCancelingOrder}>
+              <XCircle className="h-4 w-4" />
+              Cancel Order
+            </Button>
+          </div>
+        </div>
       </Modal>
 
     </div>

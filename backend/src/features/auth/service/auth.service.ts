@@ -11,15 +11,21 @@ import {
   NotFoundError,
   ForbiddenError,
 } from '../../../core/utils/errors';
+import { logger } from '../../../core/utils/logger';
 import type { RegisterInput, LoginInput, ForgotPasswordInput, ResetPasswordInput, UpdateProfileInput } from '../schema/auth.schema';
 
 const SALT_ROUNDS = 12;
 const RESET_PASSWORD_TOKEN_BYTES = 32;
 const RESET_PASSWORD_EXPIRES_MINUTES = 30;
+const FALLBACK_REFRESH_EXPIRES_DAYS = 7;
 
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+}
+
+interface GeneratedAuthTokens extends AuthTokens {
+  isSessionBacked: boolean;
 }
 
 export interface AuthResponse {
@@ -51,12 +57,14 @@ export async function register(input: RegisterInput): Promise<AuthResponse> {
     },
   });
 
-  const tokens = generateTokens(user.id, user.role);
+  const tokens = await generateTokens(user.id, user.role);
 
-  // Persist refresh token
   await prisma.user.update({
     where: { id: user.id },
-    data: { refreshToken: tokens.refreshToken },
+    data: {
+      lastLoginAt: new Date(),
+      ...(!tokens.isSessionBacked && { refreshToken: tokens.refreshToken }),
+    },
   });
 
   return {
@@ -82,14 +90,13 @@ export async function login(input: LoginInput): Promise<AuthResponse> {
     throw new UnauthorizedError('Email atau password salah');
   }
 
-  const tokens = generateTokens(user.id, user.role);
+  const tokens = await generateTokens(user.id, user.role);
 
-  // Update refresh token & last login
   await prisma.user.update({
     where: { id: user.id },
     data: {
-      refreshToken: tokens.refreshToken,
       lastLoginAt: new Date(),
+      ...(!tokens.isSessionBacked && { refreshToken: tokens.refreshToken }),
     },
   });
 
@@ -158,29 +165,37 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash,
-      refreshToken: null,
-      passwordResetTokenHash: null,
-      passwordResetExpiresAt: null,
-    },
-  });
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        refreshToken: null,
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+      },
+    }),
+    prisma.userRefreshSession.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
 }
 
 // ─── Refresh Token ─────────────────────────────────────────────────────────
 export async function refreshToken(token: string): Promise<{ accessToken: string }> {
-  let payload: { userId: string };
+  let payload: { userId: string; sessionId?: string };
   try {
     payload = verifyRefreshToken(token);
   } catch {
     throw new UnauthorizedError('Refresh token tidak valid atau sudah kedaluwarsa');
   }
 
-  const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+  const user = payload.sessionId
+    ? await findUserByRefreshSession(payload.userId, payload.sessionId, token)
+    : await findUserByLegacyRefreshToken(payload.userId, token);
 
-  if (!user || user.refreshToken !== token) {
+  if (!user) {
     throw new UnauthorizedError('Refresh token tidak valid');
   }
 
@@ -193,11 +208,28 @@ export async function refreshToken(token: string): Promise<{ accessToken: string
 }
 
 // ─── Logout ────────────────────────────────────────────────────────────────
-export async function logout(userId: string): Promise<void> {
-  await prisma.user.update({
-    where: { id: userId },
-    data: { refreshToken: null },
-  });
+export async function logout(userId: string, refreshToken?: string): Promise<void> {
+  if (refreshToken) {
+    const tokenHash = hashRefreshToken(refreshToken);
+    let sessionId: string | undefined;
+
+    try {
+      sessionId = verifyRefreshToken(refreshToken).sessionId;
+    } catch {
+      sessionId = undefined;
+    }
+
+    if (sessionId) {
+      await revokeRefreshSession({
+        id: sessionId,
+        userId,
+        refreshTokenHash: tokenHash,
+      });
+      return;
+    }
+  }
+
+  await revokeAllRefreshSessionsForUser(userId);
 }
 
 // ─── Get Me ────────────────────────────────────────────────────────────────
@@ -250,11 +282,112 @@ export async function updateProfile(userId: string, input: UpdateProfileInput) {
   });
 }
 
-function generateTokens(userId: string, role: string): AuthTokens {
+async function generateTokens(userId: string, role: string): Promise<GeneratedAuthTokens> {
+  const sessionId = crypto.randomUUID();
+  const accessToken = signAccessToken({ userId, role });
+  const refreshToken = signRefreshToken({ userId, sessionId });
+  const payload = verifyRefreshToken(refreshToken);
+
+  try {
+    await prisma.userRefreshSession.create({
+      data: {
+        id: sessionId,
+        userId,
+        refreshTokenHash: hashRefreshToken(refreshToken),
+        expiresAt: getRefreshTokenExpiresAt(payload.exp),
+      },
+    });
+
+    return { accessToken, refreshToken, isSessionBacked: true };
+  } catch (error) {
+    logger.warn('Refresh session table is unavailable; falling back to legacy refresh token storage', {
+      userId,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+
   return {
-    accessToken: signAccessToken({ userId, role }),
+    accessToken,
     refreshToken: signRefreshToken({ userId }),
+    isSessionBacked: false,
   };
+}
+
+function hashRefreshToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function getRefreshTokenExpiresAt(exp?: number) {
+  if (exp) return new Date(exp * 1000);
+  return new Date(Date.now() + FALLBACK_REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
+}
+
+async function findUserByRefreshSession(userId: string, sessionId: string, token: string) {
+  const session = await prisma.userRefreshSession.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+      refreshTokenHash: hashRefreshToken(token),
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    include: { user: true },
+  });
+
+  return session?.user ?? null;
+}
+
+async function revokeRefreshSession(input: { id: string; userId: string; refreshTokenHash: string }) {
+  try {
+    await prisma.userRefreshSession.updateMany({
+      where: {
+        id: input.id,
+        userId: input.userId,
+        refreshTokenHash: input.refreshTokenHash,
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+  } catch (error) {
+    logger.warn('Refresh session revoke skipped because session table is unavailable', {
+      userId: input.userId,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+}
+
+async function revokeAllRefreshSessionsForUser(userId: string) {
+  try {
+    await prisma.$transaction([
+      prisma.userRefreshSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { refreshToken: null },
+      }),
+    ]);
+  } catch (error) {
+    logger.warn('Refresh session table is unavailable; clearing only legacy refresh token', {
+      userId,
+      error: error instanceof Error ? error.message : error,
+    });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { refreshToken: null },
+    });
+  }
+}
+
+async function findUserByLegacyRefreshToken(userId: string, token: string) {
+  return prisma.user.findFirst({
+    where: {
+      id: userId,
+      refreshToken: token,
+    },
+  });
 }
 
 function hashResetToken(token: string): string {

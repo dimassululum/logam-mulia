@@ -118,8 +118,9 @@ export default function Navbar() {
   }
 
   async function handleLogout() {
+    const refreshToken = localStorage.getItem('refresh_token')
     try {
-      await apiClient.post('/auth/logout')
+      await apiClient.post('/auth/logout', { refreshToken })
     } catch {
       // The local session is cleared either way.
     } finally {

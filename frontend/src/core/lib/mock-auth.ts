@@ -6,6 +6,8 @@ export const MOCK_AUTH_COOKIES = {
   email: 'lm-email',
 } as const
 
+export const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+
 export function isUserRole(value: string | null | undefined): value is UserRole {
   return value === 'customer' || value === 'admin' || value === 'super_admin'
 }

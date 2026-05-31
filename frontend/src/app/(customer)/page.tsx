@@ -5,7 +5,9 @@ import BannerSlider from '@/features/home/BannerSlider'
 import { getHomeData, type HomeMetalPrices, type HomeProduct } from '@/features/home/home-api'
 import { getStorefrontVouchers } from '@/features/products/product-api'
 import { formatCompactDiscount, getVoucherPreviewForProductAmount } from '@/features/products/voucher-pricing'
+import { cn } from '@/core/lib/utils'
 import {
+  BadgePercent,
   ShieldCheck,
   TrendingUp,
   Package,
@@ -189,6 +191,8 @@ export default async function HomePage() {
         sold: `${Math.max(0, p.soldCount)} terjual`,
         originalPrice: voucherPreview.discountAmount > 0 ? formatShortCurrency(voucherPreview.originalPrice) : '',
         discountLabel: voucherPreview.discountAmount > 0 ? `-Rp ${formatCompactDiscount(voucherPreview.discountAmount)}` : '',
+        savingsLabel: voucherPreview.discountAmount > 0 ? `Rp ${formatCompactDiscount(voucherPreview.discountAmount)}` : '',
+        isPromo: voucherPreview.discountAmount > 0,
         imageUrl: p.imageUrl,
       }
     })
@@ -373,13 +377,27 @@ export default async function HomePage() {
                 key={product.id}
                 href={`/products/${product.slug}`}
                 id={`popular-product-${product.id}`}
-                className="card-product p-4 relative overflow-hidden block"
+                className={cn(
+                  'card-product p-4 relative overflow-hidden block',
+                  product.isPromo && 'border-2 border-gold-400 bg-[linear-gradient(180deg,#FFF1C2_0%,#FFFFFF_44%,#FFF9EA_100%)] shadow-[0_18px_42px_-18px_rgba(212,168,75,0.9)] ring-2 ring-gold-100/90',
+                )}
               >
-                <div className="product-img-wrap mb-stack-sm">
+                <div className="product-img-wrap mb-stack-sm relative">
                   {product.imageUrl ? (
                     <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
                   ) : (
                     <GoldBarIcon className="w-12 h-12 text-gold-400/40" />
+                  )}
+                  {product.isPromo && (
+                    <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-r from-gold-500 via-gold-400 to-gold-300 px-2.5 py-1.5 text-[9px] font-extrabold uppercase text-navy-900 shadow-lg shadow-navy-900/20">
+                      <span className="inline-flex items-center gap-1">
+                        <BadgePercent className="h-3 w-3" />
+                        Promo
+                      </span>
+                      <span className="shrink-0 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] text-[#216B35]">
+                        -{product.savingsLabel}
+                      </span>
+                    </span>
                   )}
                 </div>
 
@@ -390,12 +408,7 @@ export default async function HomePage() {
                     <p className="text-[10px] font-semibold text-[#888888] line-through">{product.originalPrice}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <p className="text-gold-400 font-bold text-sm">{product.price}</p>
-                    {product.discountLabel && (
-                      <span className="rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-bold leading-none text-[#2E7D32]">
-                        {product.discountLabel}
-                      </span>
-                    )}
+                    <p className={cn('text-gold-400 font-bold text-sm', product.isPromo && 'text-gold-700 font-extrabold')}>{product.price}</p>
                   </div>
                   <p className="text-[10px] text-navy-600/70 font-medium">{product.sold}</p>
                 </div>
