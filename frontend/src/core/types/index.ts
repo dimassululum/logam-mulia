@@ -26,6 +26,7 @@ export interface CartItem {
 
 // ─── Order ───────────────────────────────────────────────────────────────────
 export type OrderStatus =
+  | 'unpaid'
   | 'pending'
   | 'success'
   | 'paid'

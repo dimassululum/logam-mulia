@@ -772,6 +772,8 @@ export function formatDateRange(startDate: string, endDate: string) {
 
 export function getOrderBadgeVariant(status: OrderStatus) {
   switch (status) {
+    case 'unpaid':
+      return 'unpaid'
     case 'pending':
       return 'pending'
     case 'paid':
@@ -798,17 +800,22 @@ export function getOrderBadgeVariant(status: OrderStatus) {
 
 export function getOrderStatusLabel(status: OrderStatus) {
   switch (status) {
+    case 'unpaid':
+      return 'Unpaid'
     case 'pending':
       return 'Pending'
     case 'paid':
+      return 'Paid'
     case 'success':
+      return 'Success'
     case 'processing':
+      return 'Paid'
     case 'shipped':
     case 'delivered':
       return 'Success'
     case 'completed':
     case 'selesai':
-      return 'Selesai'
+      return 'Success'
     case 'refund':
       return 'Refund'
     case 'cancelled':

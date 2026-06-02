@@ -19,8 +19,8 @@ import {
   Card,
 } from '@/shared/ui'
 
-const successStatuses = new Set(['success', 'paid', 'processing', 'shipped', 'delivered'])
-const revenueStatuses = new Set(['success', 'paid', 'processing', 'shipped', 'delivered', 'completed', 'selesai'])
+const successStatuses = new Set(['success', 'completed', 'selesai'])
+const revenueStatuses = new Set(['paid', 'processing', 'success', 'shipped', 'delivered', 'completed', 'selesai'])
 
 function isSuccessOrder(order: AdminOrderRecord) {
   return successStatuses.has(String(order.status).toLowerCase())
@@ -102,14 +102,14 @@ export default function AdminDashboardScreen() {
     {
       label: 'Pendapatan Hari Ini',
       value: formatRupiah(dashboardData.todayRevenue),
-      description: 'Success dan selesai hari ini',
+      description: 'Paid dan success hari ini',
       tone: 'success' as const,
       icon: CalendarDays,
     },
     {
       label: 'Total Pendapatan',
       value: formatRupiah(dashboardData.totalRevenue),
-      description: 'Akumulasi success dan selesai',
+      description: 'Akumulasi paid dan success',
       tone: 'info' as const,
       icon: ReceiptText,
     },

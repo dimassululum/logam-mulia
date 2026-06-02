@@ -21,6 +21,7 @@ enum Role {
 }
 
 enum OrderStatus {
+  UNPAID
   PENDING
   PAID
   PROCESSING

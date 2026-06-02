@@ -58,14 +58,17 @@ function getItemCount(order: any) {
 }
 
 function mapPublicStatus(status: OrderStatus) {
-  if (status === OrderStatus.COMPLETED) {
-    return 'selesai';
+  if (status === OrderStatus.UNPAID) {
+    return 'unpaid';
+  }
+  if (status === OrderStatus.PAID || status === OrderStatus.PROCESSING) {
+    return 'paid';
+  }
+  if (status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED || status === OrderStatus.COMPLETED) {
+    return 'success';
   }
   if (status === OrderStatus.REFUND) {
     return 'refund';
-  }
-  if (status === OrderStatus.PAID || status === OrderStatus.PROCESSING || status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED) {
-    return 'success';
   }
   if (status === OrderStatus.CANCELLED) {
     return 'canceled';
@@ -618,10 +621,12 @@ function buildOrderWhere(input: Pick<GetAllOrdersInput, 'search' | 'status' | 's
   }
 
   if (input.status && input.status !== 'all') {
-    if (input.status === 'success') {
-      where.status = { in: [OrderStatus.PAID, OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED] };
-    } else if (input.status === 'selesai') {
-      where.status = OrderStatus.COMPLETED;
+    if (input.status === 'unpaid') {
+      where.status = OrderStatus.UNPAID;
+    } else if (input.status === 'paid') {
+      where.status = { in: [OrderStatus.PAID, OrderStatus.PROCESSING] };
+    } else if (input.status === 'success') {
+      where.status = { in: [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.COMPLETED] };
     } else if (input.status === 'canceled') {
       where.status = OrderStatus.CANCELLED;
     } else if (input.status === 'refund') {
@@ -716,7 +721,7 @@ export async function createOrder(input: CreateOrderInput) {
       data: {
         id,
         userId: user.id,
-        status: OrderStatus.PENDING,
+        status: OrderStatus.UNPAID,
         customerName: input.customerName,
         customerEmail: input.email.trim().toLowerCase(),
         customerPhone: input.customerPhone || user.phone || null,
@@ -748,7 +753,7 @@ export async function createOrder(input: CreateOrderInput) {
         },
         statusLogs: {
           create: {
-            status: OrderStatus.PENDING,
+            status: OrderStatus.UNPAID,
             note: `Pesanan dibuat dari checkout customer dengan metode ${paymentMethod.label}.`,
           },
         },
@@ -784,6 +789,18 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   if (!existing) throw new NotFoundError('Pesanan');
   const now = new Date();
 
+  if (input.status === OrderStatus.PAID || input.status === OrderStatus.PENDING || input.status === OrderStatus.UNPAID) {
+    throw new BadRequestError('Gunakan alur pembayaran untuk mengubah status unpaid, pending, atau paid.');
+  }
+
+  if (input.status === OrderStatus.COMPLETED && existing.status !== OrderStatus.PAID && existing.status !== OrderStatus.PROCESSING && existing.status !== OrderStatus.SHIPPED && existing.status !== OrderStatus.DELIVERED) {
+    throw new BadRequestError('Pesanan hanya bisa ditandai success setelah pembayaran berstatus paid.');
+  }
+
+  if (input.status === OrderStatus.CANCELLED && existing.status === OrderStatus.COMPLETED) {
+    throw new BadRequestError('Pesanan success tidak bisa dibatalkan.');
+  }
+
   const order = await prisma.order.update({
     where: { id },
     data: {
@@ -818,7 +835,7 @@ export async function uploadPaymentProof(id: string, userId: string, file: Expre
     throw new ForbiddenError('Anda tidak memiliki akses ke pesanan ini');
   }
 
-  if (existing.status !== OrderStatus.PENDING) {
+  if (existing.status !== OrderStatus.UNPAID && existing.status !== OrderStatus.PENDING) {
     throw new BadRequestError('Bukti pembayaran hanya bisa diupload untuk pesanan yang masih menunggu pembayaran.');
   }
 
@@ -827,6 +844,7 @@ export async function uploadPaymentProof(id: string, userId: string, file: Expre
     data: {
       paymentProofUrl: `/uploads/${file.filename}`,
       paymentProofUploadedAt: new Date(),
+      status: OrderStatus.PENDING,
       statusLogs: {
         create: {
           status: OrderStatus.PENDING,

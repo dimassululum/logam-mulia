@@ -218,38 +218,6 @@ async function getCachedLocationRows(path: string) {
   return cached ? getCachedPayloadRows(cached.payload) : [];
 }
 
-async function hasCachedLocationRows(path: string) {
-  const rows = await getCachedLocationRows(path);
-  return rows.length > 0;
-}
-
-async function hasCompleteDistrict(district: any) {
-  return hasCachedLocationRows(`/destination/sub-district/${Number(district.id)}`);
-}
-
-async function hasCompleteCity(city: any) {
-  const districts = await getCachedLocationRows(`/destination/district/${Number(city.id)}`);
-  for (const district of districts) {
-    if (await hasCompleteDistrict(district)) return true;
-  }
-  return false;
-}
-
-async function hasCompleteProvince(province: any) {
-  const cities = await getCachedLocationRows(`/destination/city/${Number(province.id)}`);
-  for (const city of cities) {
-    if (await hasCompleteCity(city)) return true;
-  }
-  return false;
-}
-
-async function takeFirstComplete<T>(rows: T[], predicate: (row: T) => Promise<boolean>) {
-  for (const row of [...rows].sort((a: any, b: any) => Number(hasCleanName(b)) - Number(hasCleanName(a)))) {
-    if (await predicate(row)) return [row];
-  }
-  return [];
-}
-
 async function findCachedDistrictName(districtId: number) {
   const cachedDistrictPages = await prisma.rajaOngkirCache.findMany({
     where: { cacheKey: { startsWith: 'GET:/destination/district/' } },
@@ -263,33 +231,29 @@ async function findCachedDistrictName(districtId: number) {
 
 export async function getRajaOngkirProvinces() {
   const rows = await getCachedLocationRows('/destination/province');
-  const connectedRows = await takeFirstComplete(rows, hasCompleteProvince);
-  return connectedRows.map(mapNamedItem);
+  return rows.map(mapNamedItem);
 }
 
 export async function getRajaOngkirCities(provinceId: number) {
   const rows = await getCachedLocationRows(`/destination/city/${provinceId}`);
-  const connectedRows = await takeFirstComplete(rows, hasCompleteCity);
-  return connectedRows.map(mapNamedItem);
+  return rows.map(mapNamedItem);
 }
 
 export async function getRajaOngkirDistricts(cityId: number) {
   const rows = await getCachedLocationRows(`/destination/district/${cityId}`);
-  const connectedRows = await takeFirstComplete(rows, hasCompleteDistrict);
-  return connectedRows.map(mapNamedItem);
+  return rows.map(mapNamedItem);
 }
 
 export async function getRajaOngkirSubdistricts(districtId: number) {
   const rows = await getCachedLocationRows(`/destination/sub-district/${districtId}`);
-  const [row] = [...rows].sort((a: any, b: any) => Number(hasCleanName(b)) - Number(hasCleanName(a)));
-  if (!row) return [];
+  if (rows.length === 0) return [];
 
   const fallbackName = await findCachedDistrictName(districtId);
-  return [{
+  return rows.map((row) => ({
     id: Number(row.id),
     name: hasCleanName(row) ? String(row.name).trim() : fallbackName,
     zipCode: row.zip_code ? String(row.zip_code).trim() : undefined,
-  }];
+  }));
 }
 
 export async function searchRajaOngkirDestinations(search: string) {

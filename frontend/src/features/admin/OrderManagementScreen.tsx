@@ -20,16 +20,16 @@ import { SHIPPING_CARRIERS, ShippingCarrierLabel, ShippingCarrierLogo } from '@/
 const ORDER_PAGE_SIZE = 20
 
 const STATUS_FILTER_OPTIONS: { value: OrderStatus; label: string }[] = [
+  { value: 'unpaid', label: 'Unpaid' },
   { value: 'pending', label: 'Pending' },
+  { value: 'paid', label: 'Paid' },
   { value: 'success', label: 'Success' },
   { value: 'canceled', label: 'Canceled' },
-  { value: 'refund', label: 'Refund' },
-  { value: 'selesai', label: 'Selesai' },
 ]
 
 const UPDATE_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
-  { value: 'refund', label: 'Refund' },
-  { value: 'selesai', label: 'Selesai' },
+  { value: 'success', label: 'Success' },
+  { value: 'canceled', label: 'Canceled' },
 ]
 
 const SHIPPING_FILTER_OPTIONS = [
@@ -39,11 +39,11 @@ const SHIPPING_FILTER_OPTIONS = [
 ]
 
 const STATUS_GUIDE: { status: OrderStatus; description: string }[] = [
-  { status: 'pending', description: 'Pengguna belum bayar.' },
-  { status: 'success', description: 'Pengguna sudah bayar, namun barang belum diproses.' },
-  { status: 'canceled', description: 'Pengguna belum bayar hingga batas waktu habis.' },
-  { status: 'refund', description: 'Admin memilih mengembalikan biaya.' },
-  { status: 'selesai', description: 'Pesanan berhasil dikirim dengan ekspedisi atau diberikan di butik yang dipilih.' },
+  { status: 'unpaid', description: 'Pengguna sudah membuat pesanan, tetapi belum upload bukti pembayaran.' },
+  { status: 'pending', description: 'Pengguna sudah pesan dan upload bukti pembayaran. Menunggu konfirmasi admin.' },
+  { status: 'paid', description: 'Pembayaran sudah dikonfirmasi admin.' },
+  { status: 'canceled', description: 'Admin membatalkan pesanan.' },
+  { status: 'success', description: 'Pesanan berhasil dikirim dengan ekspedisi atau diberikan di butik yang dipilih.' },
 ]
 
 function normalizeWhatsappPhone(phone: string) {
@@ -84,7 +84,6 @@ function openWhatsappBusiness(phone: string) {
 }
 
 function getPaymentAwareStatusLabel(order: AdminOrderRecord) {
-  if (order.status === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
   return getOrderStatusLabel(order.status)
 }
 
@@ -189,7 +188,7 @@ export default function OrderManagementScreen() {
 
   function openStatusModal(order: AdminOrderRecord) {
     setActiveOrder(order)
-    setNextStatus(order.status === 'refund' ? 'refund' : 'selesai')
+    setNextStatus(order.status === 'paid' ? 'success' : 'canceled')
   }
 
   function resetFilters() {
@@ -239,8 +238,13 @@ export default function OrderManagementScreen() {
     { id: 'actions', label: 'Aksi', className: 'w-[15%]' },
   ]
 
+  const availableStatusOptions = activeOrder?.status === 'paid'
+    ? UPDATE_STATUS_OPTIONS
+    : UPDATE_STATUS_OPTIONS.filter((option) => option.value === 'canceled')
+
   const rows: AdminTableRow[] = orders.map((order) => {
     const whatsappUrl = buildWhatsappUrl(order.customerPhone)
+    const canUpdateStatus = !['success', 'canceled', 'cancelled', 'completed', 'selesai', 'refund'].includes(order.status)
 
     return {
       id: order.id,
@@ -299,7 +303,7 @@ export default function OrderManagementScreen() {
           >
             <ArrowUpRight className="h-4 w-4" />
           </Link>
-          <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} />
+          {canUpdateStatus ? <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} /> : null}
         </div>,
       ],
       mobileTitle: order.id,
@@ -353,7 +357,7 @@ export default function OrderManagementScreen() {
             >
               <ArrowUpRight className="h-4 w-4" />
             </Link>
-            <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} />
+            {canUpdateStatus ? <IconActionButton label={`Update ${order.id}`} tone="edit" onClick={() => openStatusModal(order)} /> : null}
           </div>
         </div>
       ),
@@ -430,7 +434,7 @@ export default function OrderManagementScreen() {
           <label className="flex flex-col gap-1.5 text-sm font-medium text-navy-700">
             Status
             <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as OrderStatus)} className={adminSelectClassName}>
-              {UPDATE_STATUS_OPTIONS.map((option) => (
+              {availableStatusOptions.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>

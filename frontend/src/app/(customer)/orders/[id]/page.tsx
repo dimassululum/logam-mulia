@@ -49,10 +49,10 @@ function joinRegion(order: AdminOrderDetailRecord) {
 }
 
 function getPaymentStatusLabel(order: AdminOrderDetailRecord) {
-  if (order.status === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
-  if (order.status === 'pending') return 'Menunggu Pembayaran'
-  if (order.status === 'success') return 'Sudah Dibayar'
-  if (order.status === 'selesai') return 'Selesai'
+  if (order.status === 'unpaid') return 'Menunggu Pembayaran'
+  if (order.status === 'pending') return 'Menunggu Verifikasi'
+  if (order.status === 'paid') return 'Paid'
+  if (order.status === 'success' || order.status === 'selesai' || order.status === 'completed') return 'Success'
   if (order.status === 'canceled') return 'Dibatalkan'
   return String(order.status)
 }

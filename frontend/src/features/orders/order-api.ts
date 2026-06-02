@@ -150,10 +150,11 @@ export async function fetchAdminOrder(id: string) {
 
 export async function updateAdminOrderStatus(id: string, status: OrderStatus, trackingNumber?: string) {
   const backendStatus =
-    status === 'success' ? 'PAID'
-      : status === 'canceled' ? 'CANCELLED'
-        : status === 'selesai' ? 'COMPLETED'
-          : status.toUpperCase()
+    status === 'unpaid' ? 'UNPAID'
+      : status === 'success' ? 'COMPLETED'
+        : status === 'canceled' ? 'CANCELLED'
+          : status === 'selesai' ? 'COMPLETED'
+            : status.toUpperCase()
   const response = await apiClient.put<{ data: AdminOrderDetailRecord }>(`/orders/${encodeURIComponent(id)}/status`, {
     status: backendStatus,
     trackingNumber,

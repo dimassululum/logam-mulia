@@ -17,13 +17,18 @@ import { AdminPageHeader, Badge, Button, Card, Modal } from '@/shared/ui'
 import { ShippingCarrierLabel } from '@/features/shipping/shipping-carriers'
 
 function normalizeOrderStatus(status: OrderStatus): OrderStatus {
-  if (['paid', 'processing', 'shipped', 'delivered', 'completed'].includes(status)) return 'success'
+  if (['processing'].includes(status)) return 'paid'
+  if (['shipped', 'delivered', 'completed', 'selesai'].includes(status)) return 'success'
   if (status === 'cancelled') return 'canceled'
   return status
 }
 
 function getOrderStatusHeadline(status: OrderStatus) {
   switch (normalizeOrderStatus(status)) {
+    case 'unpaid':
+      return 'Unpaid'
+    case 'paid':
+      return 'Paid'
     case 'success':
       return 'Success'
     case 'pending':
@@ -36,12 +41,15 @@ function getOrderStatusHeadline(status: OrderStatus) {
 }
 
 function getPaymentStatusHeadline(order: AdminOrderDetailRecord) {
-  if (normalizeOrderStatus(order.status) === 'pending' && order.paymentProofUrl) return 'Menunggu Verifikasi'
   return getOrderStatusHeadline(order.status)
 }
 
 function getOrderStampLabel(status: OrderStatus) {
   switch (normalizeOrderStatus(status)) {
+    case 'unpaid':
+      return 'UNPAID'
+    case 'paid':
+      return 'PAID'
     case 'success':
       return 'SUCCESS'
     case 'pending':
@@ -55,8 +63,12 @@ function getOrderStampLabel(status: OrderStatus) {
 
 function getWatermarkClassName(status: OrderStatus) {
   switch (normalizeOrderStatus(status)) {
-    case 'success':
+    case 'unpaid':
+      return 'text-slate-500/10'
+    case 'paid':
       return 'text-emerald-600/10'
+    case 'success':
+      return 'text-violet-600/10'
     case 'canceled':
       return 'text-red-600/10'
     case 'pending':
@@ -279,7 +291,9 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
   const publicKtpUrl = getPublicKtpUrl(order)
   const publicPaymentProofUrl = getPublicPaymentProofUrl(order)
-  const canCancelOrder = !['canceled', 'refund', 'selesai'].includes(normalizeOrderStatus(order.status))
+  const normalizedStatus = normalizeOrderStatus(order.status)
+  const canCancelOrder = !['canceled', 'refund', 'success'].includes(normalizedStatus)
+  const canMarkSuccess = normalizedStatus === 'paid'
 
   useEffect(() => {
     if (!toast) return
@@ -315,6 +329,21 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
       setToast({ message: 'Gagal membatalkan pesanan.', tone: 'error' })
     } finally {
       setIsCancelingOrder(false)
+    }
+  }
+
+  async function handleMarkSuccess() {
+    setIsConfirmingPayment(true)
+    setPaymentActionError('')
+    try {
+      const updated = await updateAdminOrderStatus(order.id, 'success')
+      setOrder(updated)
+      setToast({ message: 'Pesanan berhasil ditandai success.', tone: 'success' })
+    } catch {
+      setPaymentActionError('Gagal menandai pesanan success.')
+      setToast({ message: 'Gagal menandai pesanan success.', tone: 'error' })
+    } finally {
+      setIsConfirmingPayment(false)
     }
   }
 
@@ -481,6 +510,12 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
                         <Button size="sm" onClick={handleConfirmPayment} isLoading={isConfirmingPayment}>
                           <CheckCircle2 className="h-4 w-4" />
                           Konfirmasi Pembayaran
+                        </Button>
+                      ) : null}
+                      {canMarkSuccess ? (
+                        <Button size="sm" onClick={handleMarkSuccess} isLoading={isConfirmingPayment}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Tandai Success
                         </Button>
                       ) : null}
                     </div>

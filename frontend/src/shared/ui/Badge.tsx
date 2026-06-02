@@ -1,6 +1,7 @@
 import { cn } from '@/core/lib/utils'
 
 type BadgeVariant =
+  | 'unpaid'
   | 'pending'
   | 'paid'
   | 'processing'
@@ -17,6 +18,7 @@ type BadgeVariant =
   | 'neutral'
 
 const variantStyles: Record<BadgeVariant, string> = {
+  unpaid:    'bg-slate-100 text-slate-700 border border-slate-300',
   pending:   'bg-amber-50 text-amber-700 border border-amber-300',
   paid:      'bg-emerald-50 text-emerald-700 border border-emerald-300',
   processing:'bg-sky-50 text-sky-700 border border-sky-300',
@@ -34,7 +36,8 @@ const variantStyles: Record<BadgeVariant, string> = {
 }
 
 const variantLabels: Partial<Record<BadgeVariant, string>> = {
-  pending:   'Menunggu Pembayaran',
+  unpaid:    'Belum Bayar',
+  pending:   'Menunggu Verifikasi',
   paid:      'Sudah Dibayar',
   processing:'Diproses',
   shipped:   'Dikirim',

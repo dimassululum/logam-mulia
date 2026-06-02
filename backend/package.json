@@ -17,7 +17,8 @@
     "seed:demo-products:execute": "ts-node scripts/seed-demo-products.ts --execute",
     "seed:demo-product-reviews": "ts-node scripts/seed-demo-product-reviews.ts",
     "seed:demo-product-reviews:execute": "ts-node scripts/seed-demo-product-reviews.ts --execute",
-    "seed:raja-ongkir-cache": "ts-node scripts/seed-raja-ongkir-cache.ts",
+    "seed:raja-ongkir-cache": "ts-node scripts/sync-indonesia-locations.ts",
+    "sync:indonesia-locations": "ts-node scripts/sync-indonesia-locations.ts",
     "migrate:base64-assets": "ts-node scripts/migrate-base64-assets-to-uploads.ts",
     "migrate:base64-assets:execute": "ts-node scripts/migrate-base64-assets-to-uploads.ts --execute",
     "postinstall": "prisma generate"
