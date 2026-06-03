@@ -3,13 +3,11 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import LoginForm from '@/features/auth/LoginForm'
-import { AUTH_COOKIE_MAX_AGE_SECONDS, MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
 import { apiClient } from '@/core/lib/api-client'
+import { navigateAfterAuth, persistAuthSession, resolvePostAuthPath } from '@/features/auth/auth-session'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [registerHref, setRegisterHref] = useState('/register')
@@ -27,25 +25,8 @@ export default function LoginPage() {
       const response = await apiClient.post('/auth/login', { email, password })
       const { user, tokens } = response.data.data
 
-      // Store token in localStorage
-      localStorage.setItem('access_token', tokens.accessToken)
-      localStorage.setItem('refresh_token', tokens.refreshToken)
-      localStorage.setItem('user_name', user.name)
-      localStorage.setItem('user_email', user.email)
-      window.dispatchEvent(new Event('lm-auth-updated'))
-
-      // Store in cookies for compatibility with existing middleware if any
-      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
-
-      if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
-        router.push('/admin')
-      } else {
-        const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/'
-        router.push(redirectTo)
-      }
-      router.refresh()
+      persistAuthSession(user, tokens)
+      navigateAfterAuth(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? '/admin' : resolvePostAuthPath('/'))
     } catch (err: any) {
       console.error(err)
       setError(err.response?.data?.message || 'Terjadi kesalahan saat login.')

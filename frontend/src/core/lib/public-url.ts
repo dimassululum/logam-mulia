@@ -61,6 +61,7 @@ export function resolvePublicAssetUrl(value?: string | null) {
   const apiAssetOrigin = getApiAssetOrigin()
   if (rawValue.startsWith('/uploads/')) return `${apiAssetOrigin}${rawValue}`
   if (rawValue.startsWith('/api/uploads/')) return `${apiAssetOrigin}${rawValue.replace(/^\/api\/uploads\//, '/uploads/')}`
+  if (/^[^/\\]+\.(?:jpe?g|png|webp|gif)$/i.test(rawValue)) return `${apiAssetOrigin}/uploads/${rawValue}`
 
   try {
     const url = new URL(rawValue)

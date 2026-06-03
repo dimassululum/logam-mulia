@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useEffect, useMemo, useState } from 'react'
 import { Eye } from 'lucide-react'
 import { apiClient } from '@/core/lib/api-client'
+import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import { FilterInput } from '@/features/admin/admin-management-shared'
 import { InlineToast, TableToolbar, type ToastTone } from '@/features/admin/admin-ui'
 import type { AdminTableColumn, AdminTableRow } from '@/shared/ui/AdminTable'
@@ -14,12 +15,6 @@ interface CustomerRecord {
   name: string
   email: string
   ktpUrl: string | null
-}
-
-function publicUrl(path: string | null) {
-  if (!path) return null
-  if (path.startsWith('http')) return path
-  return `${process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:5000'}${path}`
 }
 
 export default function CustomerManagementScreen() {
@@ -66,7 +61,7 @@ export default function CustomerManagementScreen() {
   ]
 
   const rows: AdminTableRow[] = filteredCustomers.map((customer) => {
-    const ktpUrl = publicUrl(customer.ktpUrl)
+    const ktpUrl = resolvePublicAssetUrl(customer.ktpUrl) || null
 
     return {
       id: customer.id,
@@ -74,7 +69,7 @@ export default function CustomerManagementScreen() {
         <p key={`${customer.id}-name`} className="text-sm font-semibold text-navy-900">{customer.name}</p>,
         <p key={`${customer.id}-email`} className="text-sm text-navy-700">{customer.email}</p>,
         <div key={`${customer.id}-ktp`} className="h-14 w-20 overflow-hidden rounded-lg border border-navy-200 bg-navy-50">
-          {ktpUrl ? <Image src={ktpUrl} alt={`KTP ${customer.name}`} width={80} height={56} className="h-full w-full object-cover" /> : null}
+          {ktpUrl ? <Image src={ktpUrl} alt={`KTP ${customer.name}`} width={80} height={56} unoptimized className="h-full w-full object-cover" /> : null}
         </div>,
         <div key={`${customer.id}-actions`} className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => setPreviewTarget(customer)} disabled={!ktpUrl}>
@@ -87,7 +82,7 @@ export default function CustomerManagementScreen() {
       mobileSubtitle: customer.email,
       mobileAside: ktpUrl ? (
         <div className="h-12 w-16 overflow-hidden rounded-lg border border-navy-200 bg-navy-50">
-          <Image src={ktpUrl} alt={`KTP ${customer.name}`} width={64} height={48} className="h-full w-full object-cover" />
+          <Image src={ktpUrl} alt={`KTP ${customer.name}`} width={64} height={48} unoptimized className="h-full w-full object-cover" />
         </div>
       ) : null,
       mobileMeta: (
@@ -99,7 +94,7 @@ export default function CustomerManagementScreen() {
     }
   })
 
-  const previewUrl = publicUrl(previewTarget?.ktpUrl ?? null)
+  const previewUrl = resolvePublicAssetUrl(previewTarget?.ktpUrl ?? null) || null
 
   return (
     <div className="space-y-4">
@@ -126,7 +121,7 @@ export default function CustomerManagementScreen() {
       <Modal isOpen={previewTarget !== null} onClose={() => setPreviewTarget(null)} title="KTP Customer" size="lg">
         {previewUrl ? (
           <div className="overflow-hidden rounded-xl border border-navy-200 bg-navy-50">
-            <Image src={previewUrl} alt={`KTP ${previewTarget?.name}`} width={900} height={560} className="h-auto w-full object-contain" />
+            <Image src={previewUrl} alt={`KTP ${previewTarget?.name}`} width={900} height={560} unoptimized className="h-auto w-full object-contain" />
           </div>
         ) : (
           <p className="text-sm text-navy-600">Customer belum mengunggah KTP.</p>

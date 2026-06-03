@@ -2,13 +2,11 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import RegisterForm from '@/features/auth/RegisterForm'
-import { AUTH_COOKIE_MAX_AGE_SECONDS, MOCK_AUTH_COOKIES } from '@/core/lib/mock-auth'
 import { apiClient } from '@/core/lib/api-client'
+import { navigateAfterAuth, persistAuthSession, resolvePostAuthPath } from '@/features/auth/auth-session'
 
 export default function RegisterPage() {
-  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,18 +18,8 @@ export default function RegisterPage() {
       const response = await apiClient.post('/auth/register', payload)
       const { user, tokens } = response.data.data
 
-      localStorage.setItem('access_token', tokens.accessToken)
-      localStorage.setItem('refresh_token', tokens.refreshToken)
-      localStorage.setItem('user_name', user.name)
-      localStorage.setItem('user_email', user.email)
-      window.dispatchEvent(new Event('lm-auth-updated'))
-      document.cookie = `${MOCK_AUTH_COOKIES.role}=${user.role.toLowerCase()}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.name}=${encodeURIComponent(user.name)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
-      document.cookie = `${MOCK_AUTH_COOKIES.email}=${encodeURIComponent(user.email)}; path=/; max-age=${AUTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
-
-      const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/'
-      router.push(redirectTo)
-      router.refresh()
+      persistAuthSession(user, tokens)
+      navigateAfterAuth(resolvePostAuthPath('/'))
     } catch (err: any) {
       setError(err.response?.data?.message || 'Registrasi gagal. Coba lagi sebentar.')
     } finally {

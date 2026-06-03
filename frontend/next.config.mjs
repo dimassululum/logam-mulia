@@ -23,6 +23,21 @@ if (process.env.NEXT_PUBLIC_API_URL) {
 
 const nextConfig = {
   output: 'standalone',
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [
+          {
+            type: 'host',
+            value: 'www.logam-mulia-antam.com',
+          },
+        ],
+        destination: 'https://logam-mulia-antam.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     const internalApiOrigin = process.env.INTERNAL_API_ORIGIN || 'http://backend:5000';
 

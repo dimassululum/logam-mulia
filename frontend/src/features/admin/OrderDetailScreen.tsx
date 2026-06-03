@@ -236,7 +236,7 @@ function DocumentPreview({ order }: { order: AdminOrderDetailRecord }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-navy-200 bg-white/70 p-4">
       {publicKtpUrl ? (
-        <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={640} height={400} className="max-h-52 w-full rounded-xl object-contain" />
+        <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={640} height={400} unoptimized className="max-h-52 w-full rounded-xl object-contain" />
       ) : (
         <div className="space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-700">Thumbnail KTP</p>
@@ -269,10 +269,7 @@ function OrderItemImage({ src, alt }: { src?: string | null; alt: string }) {
 }
 
 function getPublicKtpUrl(order: AdminOrderDetailRecord) {
-  const ktpUrl = order.recipientDetail.ktpUrl
-  if (!ktpUrl) return null
-  if (ktpUrl.startsWith('http')) return ktpUrl
-  return `${process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:5000'}${ktpUrl}`
+  return resolvePublicAssetUrl(order.recipientDetail.ktpUrl) || null
 }
 
 function getPublicPaymentProofUrl(order: AdminOrderDetailRecord) {
@@ -541,7 +538,7 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
 
       <Modal isOpen={isDocumentOpen} onClose={() => setIsDocumentOpen(false)} title="Dokumen KTP" size="lg">
         {publicKtpUrl ? (
-          <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={960} height={600} className="max-h-[72vh] w-full rounded-xl object-contain" />
+          <Image src={publicKtpUrl} alt={`KTP ${order.recipientDetail.name}`} width={960} height={600} unoptimized className="max-h-[72vh] w-full rounded-xl object-contain" />
         ) : (
           <p className="text-sm text-navy-600">Gambar KTP belum tersedia.</p>
         )}
