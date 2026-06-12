@@ -28,6 +28,7 @@ const STATUS_FILTER_OPTIONS: { value: OrderStatus; label: string }[] = [
 ]
 
 const UPDATE_STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
+  { value: 'paid', label: 'Paid' },
   { value: 'success', label: 'Success' },
   { value: 'canceled', label: 'Canceled' },
 ]
@@ -188,7 +189,7 @@ export default function OrderManagementScreen() {
 
   function openStatusModal(order: AdminOrderRecord) {
     setActiveOrder(order)
-    setNextStatus(order.status === 'paid' ? 'success' : 'canceled')
+    setNextStatus(['unpaid', 'pending'].includes(order.status) ? 'paid' : order.status === 'paid' ? 'success' : 'canceled')
   }
 
   function resetFilters() {
@@ -238,9 +239,11 @@ export default function OrderManagementScreen() {
     { id: 'actions', label: 'Aksi', className: 'w-[15%]' },
   ]
 
-  const availableStatusOptions = activeOrder?.status === 'paid'
-    ? UPDATE_STATUS_OPTIONS
-    : UPDATE_STATUS_OPTIONS.filter((option) => option.value === 'canceled')
+  const availableStatusOptions = activeOrder && ['unpaid', 'pending'].includes(activeOrder.status)
+    ? UPDATE_STATUS_OPTIONS.filter((option) => option.value === 'paid' || option.value === 'canceled')
+    : activeOrder?.status === 'paid'
+      ? UPDATE_STATUS_OPTIONS.filter((option) => option.value === 'success' || option.value === 'canceled')
+      : UPDATE_STATUS_OPTIONS.filter((option) => option.value === 'canceled')
 
   const rows: AdminTableRow[] = orders.map((order) => {
     const whatsappUrl = buildWhatsappUrl(order.customerPhone)

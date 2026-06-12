@@ -23,3 +23,8 @@ export async function updateQrisImage(req: Request, res: Response) {
   const method = await paymentMethodService.updateQrisImage(req.file);
   sendSuccess({ res, message: 'Gambar QRIS berhasil diupload', data: method });
 }
+
+export async function updateBankAccountAttachment(req: Request, res: Response) {
+  const method = await paymentMethodService.updateBankAccountAttachment(req.params.accountId, req.file);
+  sendSuccess({ res, message: 'Lampiran buku tabungan berhasil diupload', data: method });
+}

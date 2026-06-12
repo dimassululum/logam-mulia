@@ -68,7 +68,16 @@ export interface PaymentMethodConfig {
   bankName?: string
   accountNumber?: string
   accountHolder?: string
+  savingsBookAttachmentUrl?: string
   instructions?: string
+  bankAccounts?: {
+    id: string
+    bankName?: string
+    accountNumber?: string
+    accountHolder?: string
+    isActive?: boolean
+    savingsBookAttachmentUrl?: string
+  }[]
 }
 
 export interface AdminOrderLineItem {
@@ -777,17 +786,16 @@ export function getOrderBadgeVariant(status: OrderStatus) {
     case 'pending':
       return 'pending'
     case 'paid':
-    case 'success':
       return 'paid'
+    case 'success':
+      return 'success'
     case 'processing':
       return 'processing'
     case 'shipped':
-      return 'shipped'
     case 'delivered':
-      return 'delivered'
     case 'completed':
     case 'selesai':
-      return 'completed'
+      return 'success'
     case 'refund':
       return 'refund'
     case 'cancelled':

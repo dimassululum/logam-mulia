@@ -11,7 +11,18 @@ export interface PaymentMethodConfig {
   bankName?: string
   accountNumber?: string
   accountHolder?: string
+  savingsBookAttachmentUrl?: string
   instructions?: string
+  bankAccounts?: BankAccountConfig[]
+}
+
+export interface BankAccountConfig {
+  id: string
+  bankName?: string
+  accountNumber?: string
+  accountHolder?: string
+  isActive?: boolean
+  savingsBookAttachmentUrl?: string
 }
 
 export interface PaymentMethodRecord {
@@ -55,5 +66,18 @@ export async function uploadQrisImage(file: File) {
   const response = await apiClient.post<{ data: PaymentMethodRecord }>('/payment-methods/qris-manual/image', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
+  return response.data.data
+}
+
+export async function uploadBankAccountAttachment(accountId: string, file: File) {
+  const formData = new FormData()
+  formData.append('savingsBookAttachment', file)
+  const response = await apiClient.post<{ data: PaymentMethodRecord }>(
+    `/payment-methods/bank-transfer/accounts/${encodeURIComponent(accountId)}/attachment`,
+    formData,
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    },
+  )
   return response.data.data
 }

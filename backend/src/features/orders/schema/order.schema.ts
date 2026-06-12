@@ -14,6 +14,7 @@ export const createOrderSchema = z.object({
   customerName: z.string().min(2),
   customerPhone: z.string().optional(),
   paymentMethodCode: z.string().min(1),
+  paymentAccountId: z.string().optional(),
   paymentMethod: z.string().min(1).optional(),
   deliveryType: z.enum(['ekspedisi', 'butik']),
   shippingCourier: z.string().nullable().optional(),

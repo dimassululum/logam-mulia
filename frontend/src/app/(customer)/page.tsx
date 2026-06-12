@@ -46,6 +46,7 @@ const features = [
 
 const HERO_BACKGROUND_IMAGE =
   'https://images.pexels.com/photos/321452/pexels-photo-321452.jpeg?auto=compress&cs=tinysrgb&w=1800'
+const JAKARTA_TIME_ZONE = 'Asia/Jakarta'
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', {
@@ -73,6 +74,7 @@ function formatLastUpdated(products: HomeProduct[]) {
   if (!latest) return 'Perubahan terakhir: belum tersedia dari database'
 
   return `Perubahan terakhir: ${new Intl.DateTimeFormat('id-ID', {
+    timeZone: JAKARTA_TIME_ZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -91,6 +93,7 @@ function formatUpdateTime(products: HomeProduct[]) {
   if (!latest) return 'Terakhir diupdate: belum tersedia'
 
   return `Terakhir diupdate: ${new Intl.DateTimeFormat('id-ID', {
+    timeZone: JAKARTA_TIME_ZONE,
     day: '2-digit',
     month: 'long',
     year: 'numeric',
@@ -110,6 +113,7 @@ function formatMetalUpdateTime(metalPrices: HomeMetalPrices, products: HomeProdu
   if (metalTimes.length > 0) {
     const latest = metalTimes.sort((left, right) => right - left)[0]
     return `Terakhir diupdate: ${new Intl.DateTimeFormat('id-ID', {
+      timeZone: JAKARTA_TIME_ZONE,
       day: '2-digit',
       month: 'long',
       year: 'numeric',

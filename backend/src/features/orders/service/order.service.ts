@@ -512,7 +512,7 @@ export function mapOrder(order: any) {
     status: mapPublicStatus(order.status),
     paymentMethodCode: order.paymentMethodCode || null,
     paymentMethod: order.paymentMethod || 'QRIS Manual',
-    paymentMethodConfig: order.paymentMethodRef?.config || null,
+    paymentMethodConfig: order.paymentMethodConfig || order.paymentMethodRef?.config || null,
     paymentMethodCategory: order.paymentMethodRef?.category || null,
     paymentProofUrl: order.paymentProofUrl || null,
     paymentProofUploadedAt: order.paymentProofUploadedAt || null,
@@ -691,7 +691,7 @@ export async function getOrderByIdForUser(id: string, userId: string) {
 export async function createOrder(input: CreateOrderInput) {
   const user = await prisma.user.findUnique({ where: { email: input.email.trim().toLowerCase() } });
   if (!user) throw new BadRequestError('Data customer belum tersimpan. Ulangi dari halaman checkout.');
-  const paymentMethod = await resolveActivePaymentMethodForOrder(input.paymentMethodCode);
+  const paymentMethod = await resolveActivePaymentMethodForOrder(input.paymentMethodCode, input.paymentAccountId);
   const productIds = Array.from(new Set(input.items.map((item) => item.productId)));
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
@@ -731,6 +731,7 @@ export async function createOrder(input: CreateOrderInput) {
         grandTotal,
         paymentMethodCode: paymentMethod.code,
         paymentMethod: paymentMethod.label,
+        paymentMethodConfig: paymentMethod.config as unknown as Prisma.InputJsonObject,
         shippingAddress: input.shippingAddress,
         shippingCity: input.deliveryType === 'butik' ? input.boutiqueName || input.shippingCity || '-' : input.shippingCity || '-',
         shippingProvince: input.shippingProvince || null,
@@ -789,8 +790,12 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   if (!existing) throw new NotFoundError('Pesanan');
   const now = new Date();
 
-  if (input.status === OrderStatus.PAID || input.status === OrderStatus.PENDING || input.status === OrderStatus.UNPAID) {
-    throw new BadRequestError('Gunakan alur pembayaran untuk mengubah status unpaid, pending, atau paid.');
+  if (input.status === OrderStatus.PENDING || input.status === OrderStatus.UNPAID) {
+    throw new BadRequestError('Gunakan alur pembayaran untuk mengubah status unpaid atau pending.');
+  }
+
+  if (input.status === OrderStatus.PAID && existing.status !== OrderStatus.UNPAID && existing.status !== OrderStatus.PENDING) {
+    throw new BadRequestError('Pesanan hanya bisa ditandai paid dari status unpaid atau pending melalui aksi ubah status.');
   }
 
   if (input.status === OrderStatus.COMPLETED && existing.status !== OrderStatus.PAID && existing.status !== OrderStatus.PROCESSING && existing.status !== OrderStatus.SHIPPED && existing.status !== OrderStatus.DELIVERED) {

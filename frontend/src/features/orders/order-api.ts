@@ -38,6 +38,7 @@ interface CreateOrderInput {
   selectedEkspedisi: { name: string; time: string; price: number; courier?: string; service?: string } | null
   selectedButik: { name: string; city: string; address: string } | null
   paymentMethodCode: string
+  paymentAccountId?: string
   voucher: StorefrontVoucher | null
   discountAmount: number
 }
@@ -70,6 +71,7 @@ export async function createCustomerOrder(input: CreateOrderInput) {
       customerName: input.ordererName,
       customerPhone: input.selectedAddress?.phone || input.profile.phone || '',
       paymentMethodCode: input.paymentMethodCode,
+      paymentAccountId: input.paymentAccountId,
       deliveryType: input.deliveryType,
       shippingCourier: input.deliveryType === 'butik' ? 'SELFPICKUP' : input.selectedEkspedisi?.courier || input.selectedEkspedisi?.name || 'Ekspedisi',
       shippingService: input.deliveryType === 'butik' ? 'Ambil di Butik' : input.selectedEkspedisi?.service || input.selectedEkspedisi?.time || '',

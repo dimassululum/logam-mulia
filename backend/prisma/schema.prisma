@@ -211,6 +211,7 @@ model Order {
   paymentMethodCode     String?          @map("payment_method_code")
   paymentMethodRef      PaymentMethod?   @relation(fields: [paymentMethodCode], references: [code])
   paymentMethod         String           @default("QRIS Manual") @map("payment_method")
+  paymentMethodConfig   Json?            @map("payment_method_config")
   paymentProofUrl       String?          @map("payment_proof_url")
   paymentProofUploadedAt DateTime?       @map("payment_proof_uploaded_at")
   shippingAddress       String           @map("shipping_address")

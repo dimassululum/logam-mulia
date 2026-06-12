@@ -68,7 +68,7 @@ function getWatermarkClassName(status: OrderStatus) {
     case 'paid':
       return 'text-emerald-600/10'
     case 'success':
-      return 'text-violet-600/10'
+      return 'text-blue-600/10'
     case 'canceled':
       return 'text-red-600/10'
     case 'pending':
@@ -290,6 +290,7 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
   const publicPaymentProofUrl = getPublicPaymentProofUrl(order)
   const normalizedStatus = normalizeOrderStatus(order.status)
   const canCancelOrder = !['canceled', 'refund', 'success'].includes(normalizedStatus)
+  const canMarkPaid = normalizedStatus === 'unpaid' || normalizedStatus === 'pending'
   const canMarkSuccess = normalizedStatus === 'paid'
 
   useEffect(() => {
@@ -339,6 +340,21 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
     } catch {
       setPaymentActionError('Gagal menandai pesanan success.')
       setToast({ message: 'Gagal menandai pesanan success.', tone: 'error' })
+    } finally {
+      setIsConfirmingPayment(false)
+    }
+  }
+
+  async function handleMarkPaid() {
+    setIsConfirmingPayment(true)
+    setPaymentActionError('')
+    try {
+      const updated = await updateAdminOrderStatus(order.id, 'paid')
+      setOrder(updated)
+      setToast({ message: 'Pesanan berhasil ditandai paid.', tone: 'success' })
+    } catch {
+      setPaymentActionError('Gagal menandai pesanan paid.')
+      setToast({ message: 'Gagal menandai pesanan paid.', tone: 'error' })
     } finally {
       setIsConfirmingPayment(false)
     }
@@ -509,6 +525,12 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
                           Konfirmasi Pembayaran
                         </Button>
                       ) : null}
+                      {canMarkPaid ? (
+                        <Button variant="secondary" size="sm" onClick={handleMarkPaid} isLoading={isConfirmingPayment}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Tandai Paid
+                        </Button>
+                      ) : null}
                       {canMarkSuccess ? (
                         <Button size="sm" onClick={handleMarkSuccess} isLoading={isConfirmingPayment}>
                           <CheckCircle2 className="h-4 w-4" />
@@ -519,7 +541,16 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
                     {paymentActionError ? <p className="text-sm font-medium text-red-600">{paymentActionError}</p> : null}
                   </div>
                 ) : (
-                  <p className="text-sm text-navy-600">Bukti pembayaran belum diupload customer.</p>
+                  <div className="space-y-3">
+                    <p className="text-sm text-navy-600">Bukti pembayaran belum diupload customer.</p>
+                    {canMarkPaid ? (
+                      <Button size="sm" onClick={handleMarkPaid} isLoading={isConfirmingPayment}>
+                        <CheckCircle2 className="h-4 w-4" />
+                        Tandai Paid
+                      </Button>
+                    ) : null}
+                    {paymentActionError ? <p className="text-sm font-medium text-red-600">{paymentActionError}</p> : null}
+                  </div>
                 )}
               </div>
               <div className="rounded-2xl border border-white/45 bg-white/35 p-4 backdrop-blur-[1px]">

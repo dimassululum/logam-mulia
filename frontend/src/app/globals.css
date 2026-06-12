@@ -210,11 +210,14 @@
 
   /* ─── Badges ─────────────────────────────────────────────────────── */
   .badge-base    { @apply inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full border; }
+  .badge-unpaid    { @apply badge-base bg-slate-100 text-slate-700 border-slate-300; }
   .badge-pending   { @apply badge-base bg-yellow-50 text-yellow-700 border-yellow-300; }
   .badge-paid      { @apply badge-base bg-green-50 text-green-700 border-green-300; }
+  .badge-success   { @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
   .badge-processing{ @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
   .badge-shipped   { @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
-  .badge-delivered { @apply badge-base bg-emerald-50 text-emerald-700 border-emerald-300; }
+  .badge-delivered { @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
+  .badge-completed { @apply badge-base bg-blue-50 text-blue-700 border-blue-300; }
   .badge-cancelled { @apply badge-base bg-red-50 text-red-700 border-red-300; }
 
   /* ANTAM certified stamp */

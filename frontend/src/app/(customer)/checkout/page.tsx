@@ -35,8 +35,10 @@ import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
 import { createCustomerOrder } from '@/features/orders/order-api'
 import {
   fetchPublicPaymentMethods,
+  type BankAccountConfig,
   type PaymentMethodRecord,
 } from '@/features/payment-methods/payment-method-api'
+import { getBankLogo } from '@/features/payment-methods/bank-assets'
 import { SHIPPING_CARRIERS, ShippingCarrierLogo } from '@/features/shipping/shipping-carriers'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,6 +62,16 @@ interface RajaOngkirAreaOption {
   id: number
   name: string
   zipCode?: string
+}
+
+interface PaymentOption {
+  id: string
+  methodCode: string
+  paymentAccountId?: string
+  label: string
+  description?: string | null
+  category: PaymentMethodRecord['category']
+  config: PaymentMethodRecord['config']
 }
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -86,6 +98,61 @@ const STATIC_EKSPEDISI_OPTIONS: EkspedisiOption[] = SHIPPING_CARRIERS.map((carri
 const API_URL = resolvePublicApiBaseUrl()
 const MAX_KTP_FILE_SIZE_MB = 10
 const MAX_KTP_FILE_SIZE_BYTES = MAX_KTP_FILE_SIZE_MB * 1024 * 1024
+
+function isCompleteBankAccount(account: BankAccountConfig) {
+  return Boolean(account.bankName?.trim() && account.accountNumber?.trim() && account.accountHolder?.trim())
+}
+
+function buildPaymentOptions(methods: PaymentMethodRecord[]): PaymentOption[] {
+  return methods.flatMap((method) => {
+    if (method.code !== 'bank_transfer') {
+      return [{
+        id: method.code,
+        methodCode: method.code,
+        label: method.label,
+        description: method.description,
+        category: method.category,
+        config: method.config,
+      }]
+    }
+
+    const accounts = (method.config.bankAccounts ?? [])
+      .filter((account) => account.isActive && isCompleteBankAccount(account))
+
+    if (accounts.length === 0 && isCompleteBankAccount({
+      id: '1',
+      bankName: method.config.bankName,
+      accountNumber: method.config.accountNumber,
+      accountHolder: method.config.accountHolder,
+      isActive: true,
+    })) {
+      accounts.push({
+        id: '1',
+        bankName: method.config.bankName,
+        accountNumber: method.config.accountNumber,
+        accountHolder: method.config.accountHolder,
+        isActive: true,
+      })
+    }
+
+    return accounts.map((account) => ({
+      id: `${method.code}:${account.id}`,
+      methodCode: method.code,
+      paymentAccountId: account.id,
+      label: account.bankName || method.label,
+      description: account.accountNumber
+        ? `${account.accountNumber}${account.accountHolder ? ` a.n. ${account.accountHolder}` : ''}`
+        : method.description,
+      category: method.category,
+      config: {
+        ...method.config,
+        bankName: account.bankName,
+        accountNumber: account.accountNumber,
+        accountHolder: account.accountHolder,
+      },
+    }))
+  })
+}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
@@ -128,7 +195,7 @@ export default function CheckoutPage() {
   const [destinationError, setDestinationError] = useState('')
   const [addressFormError, setAddressFormError] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRecord[]>([])
-  const [selectedPaymentMethodCode, setSelectedPaymentMethodCode] = useState('')
+  const [selectedPaymentOptionId, setSelectedPaymentOptionId] = useState('')
   const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(false)
   const [paymentMethodError, setPaymentMethodError] = useState('')
 
@@ -167,14 +234,15 @@ export default function CheckoutPage() {
         const methods = await fetchPublicPaymentMethods()
         if (!alive) return
         setPaymentMethods(methods)
-        setSelectedPaymentMethodCode((current) => {
-          if (current && methods.some((method) => method.code === current)) return current
-          return methods[0]?.code ?? ''
+        setSelectedPaymentOptionId((current) => {
+          const options = buildPaymentOptions(methods)
+          if (current && options.some((option) => option.id === current)) return current
+          return options.length === 1 ? options[0].id : ''
         })
       } catch (error) {
         if (!alive) return
         setPaymentMethods([])
-        setSelectedPaymentMethodCode('')
+        setSelectedPaymentOptionId('')
         setPaymentMethodError(error instanceof Error ? error.message : 'Gagal memuat metode pembayaran.')
       } finally {
         if (alive) setIsLoadingPaymentMethods(false)
@@ -553,8 +621,9 @@ export default function CheckoutPage() {
   const discount = voucherSummary.discountAmount > 0 ? voucherSummary.discountAmount : fallbackDiscount
   const total = Math.max(0, subtotal + shippingFee - discount)
   const needsKtpUpload = !guestProfile?.hasKtp && !ktpFile
-  const selectedPaymentMethod = paymentMethods.find((method) => method.code === selectedPaymentMethodCode) ?? null
-  const hasPaymentMethod = Boolean(selectedPaymentMethod)
+  const paymentOptions = buildPaymentOptions(paymentMethods)
+  const selectedPaymentOption = paymentOptions.find((option) => option.id === selectedPaymentOptionId) ?? null
+  const hasPaymentMethod = Boolean(selectedPaymentOption)
   const canPay =
     subtotal > 0 && ordererName.trim() && !needsKtpUpload && hasPaymentMethod && deliveryType === 'ekspedisi'
       ? Boolean(selectedAddress && selectedEkspedisi)
@@ -570,7 +639,7 @@ export default function CheckoutPage() {
   )
 
   async function handlePay() {
-    if (!canPay || !guestProfile || !selectedPaymentMethod) return
+    if (!canPay || !guestProfile || !selectedPaymentOption) return
 
     setIsSavingProfile(true)
     setCheckoutError('')
@@ -592,7 +661,8 @@ export default function CheckoutPage() {
         selectedAddress,
         selectedEkspedisi,
         selectedButik,
-        paymentMethodCode: selectedPaymentMethod.code,
+        paymentMethodCode: selectedPaymentOption.methodCode,
+        paymentAccountId: selectedPaymentOption.paymentAccountId,
         voucher: checkoutVoucher,
         discountAmount: discount,
       })
@@ -825,7 +895,7 @@ export default function CheckoutPage() {
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-600">
               {paymentMethodError}
             </div>
-          ) : paymentMethods.length === 0 ? (
+          ) : paymentOptions.length === 0 ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <p className="font-semibold text-amber-800">Metode pembayaran belum tersedia.</p>
               <p className="mt-1 text-sm text-amber-700">Silakan hubungi admin untuk bantuan checkout.</p>
@@ -838,29 +908,39 @@ export default function CheckoutPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {paymentMethods.map((method) => (
-                <RadioCard
-                  key={method.code}
-                  id={`payment-${method.code}`}
-                  selected={selectedPaymentMethodCode === method.code}
-                  onClick={() => setSelectedPaymentMethodCode(method.code)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 text-gold-700">
-                      {method.category === 'QRIS' ? <QrCode className="h-6 w-6" /> : <CreditCard className="h-6 w-6" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-navy-900">{method.label}</span>
-                        <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
-                          Tersedia
-                        </span>
+              {paymentOptions.map((option) => {
+                const bankLogo = option.methodCode === 'bank_transfer' ? getBankLogo(option.config.bankName) : null
+
+                return (
+                  <RadioCard
+                    key={option.id}
+                    id={`payment-${option.id}`}
+                    selected={selectedPaymentOptionId === option.id}
+                    onClick={() => setSelectedPaymentOptionId(option.id)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 p-2 text-gold-700">
+                        {bankLogo ? (
+                          <Image src={bankLogo} alt={option.label} className="h-full w-full object-contain" />
+                        ) : option.category === 'QRIS' ? (
+                          <QrCode className="h-6 w-6" />
+                        ) : (
+                          <CreditCard className="h-6 w-6" />
+                        )}
                       </div>
-                      <p className="mt-1 text-sm text-navy-600">{method.description}</p>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-navy-900">{option.label}</span>
+                          <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
+                            Tersedia
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-navy-600">{option.description}</p>
+                      </div>
                     </div>
-                  </div>
-                </RadioCard>
-              ))}
+                  </RadioCard>
+                )
+              })}
             </div>
           )}
         </section>

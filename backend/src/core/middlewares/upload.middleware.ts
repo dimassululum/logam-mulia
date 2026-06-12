@@ -37,3 +37,20 @@ export const upload = multer({
   },
   fileFilter,
 });
+
+const paymentDocumentFileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new BadRequestError('Format file tidak didukung. Hanya JPG, PNG, dan PDF yang diizinkan.'));
+  }
+};
+
+export const paymentDocumentUpload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+  fileFilter: paymentDocumentFileFilter,
+});

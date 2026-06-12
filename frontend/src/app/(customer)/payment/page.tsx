@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Clock, CreditCard, Info, QrCode, UploadCloud } from 'lucide-react'
 import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import { formatRupiah } from '@/core/lib/utils'
+import { getBankLogo } from '@/features/payment-methods/bank-assets'
 import AppBar from '@/shared/ui/AppBar'
 import Button from '@/shared/ui/Button'
 import { readCurrentOrder, uploadCurrentOrderPaymentProof } from '@/features/orders/order-api'
@@ -24,6 +25,7 @@ export default function PaymentPage() {
   const isBankTransfer = order?.paymentMethodCode === 'bank_transfer' || order?.paymentMethodCategory === 'BANK_TRANSFER'
   const qrisImageUrl = resolvePublicAssetUrl(paymentConfig.imageUrl || '/images/qris.png')
   const customInstructions = paymentConfig.instructions?.trim()
+  const bankLogo = isBankTransfer ? getBankLogo(paymentConfig.bankName) : null
 
   function handleProofChange(file?: File | null) {
     setProofError('')
@@ -83,8 +85,12 @@ export default function PaymentPage() {
         {isBankTransfer ? (
           <section className="bg-white rounded-xl border border-navy-200 p-6 shadow-elevation-low">
             <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 text-gold-700">
-                <CreditCard className="h-6 w-6" />
+              <div className="flex h-11 w-14 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 p-2 text-gold-700">
+                {bankLogo ? (
+                  <Image src={bankLogo} alt={paymentConfig.bankName || 'Transfer Bank'} className="h-full w-full object-contain" />
+                ) : (
+                  <CreditCard className="h-6 w-6" />
+                )}
               </div>
               <div>
                 <h3 className="font-heading text-xl font-bold text-navy-900">Transfer Bank</h3>

@@ -4,6 +4,7 @@ type BadgeVariant =
   | 'unpaid'
   | 'pending'
   | 'paid'
+  | 'success'
   | 'processing'
   | 'shipped'
   | 'delivered'
@@ -19,14 +20,15 @@ type BadgeVariant =
 
 const variantStyles: Record<BadgeVariant, string> = {
   unpaid:    'bg-slate-100 text-slate-700 border border-slate-300',
-  pending:   'bg-amber-50 text-amber-700 border border-amber-300',
-  paid:      'bg-emerald-50 text-emerald-700 border border-emerald-300',
+  pending:   'bg-yellow-50 text-yellow-700 border border-yellow-300',
+  paid:      'bg-green-50 text-green-700 border border-green-300',
+  success:   'bg-blue-50 text-blue-700 border border-blue-300',
   processing:'bg-sky-50 text-sky-700 border border-sky-300',
-  shipped:   'bg-indigo-50 text-indigo-700 border border-indigo-300',
-  delivered: 'bg-teal-50 text-teal-700 border border-teal-300',
-  completed: 'bg-violet-50 text-violet-700 border border-violet-300',
+  shipped:   'bg-blue-50 text-blue-700 border border-blue-300',
+  delivered: 'bg-blue-50 text-blue-700 border border-blue-300',
+  completed: 'bg-blue-50 text-blue-700 border border-blue-300',
   refund:    'bg-rose-50 text-rose-700 border border-rose-300',
-  cancelled: 'bg-slate-100 text-slate-700 border border-slate-300',
+  cancelled: 'bg-red-50 text-red-700 border border-red-300',
   active:    'bg-emerald-50 text-emerald-700 border border-emerald-300',
   inactive:  'bg-navy-100 text-navy-700 border border-navy-200',
   expired:   'bg-amber-50 text-amber-700 border border-amber-300',
@@ -39,6 +41,7 @@ const variantLabels: Partial<Record<BadgeVariant, string>> = {
   unpaid:    'Belum Bayar',
   pending:   'Menunggu Verifikasi',
   paid:      'Sudah Dibayar',
+  success:   'Success',
   processing:'Diproses',
   shipped:   'Dikirim',
   delivered: 'Diterima',
