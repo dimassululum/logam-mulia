@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowLeft, Check, HeadphonesIcon, Minus, Plus, ShoppingCart, Tag, Trash2 } from 'lucide-react'
+import type { Product } from '@/core/types'
 import { formatRupiah } from '@/core/lib/utils'
 import {
   LocalCartItem,
@@ -14,6 +15,7 @@ import {
 } from '@/features/cart/cart-storage'
 import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
 import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
+import { mapApiProduct } from '@/features/products/product-api'
 import { mapStorefrontVoucher, summarizeApplicableVouchers, type StorefrontVoucher } from '@/features/products/voucher-pricing'
 
 const API_URL = resolvePublicApiBaseUrl()
@@ -25,8 +27,37 @@ export default function CartPage() {
   const [checkoutHref, setCheckoutHref] = useState('/login?redirect=/checkout')
 
   useEffect(() => {
-    setItems(readCartItems())
+    const storedItems = readCartItems()
+    setItems(storedItems)
     setCheckoutHref(localStorage.getItem('access_token') ? '/checkout' : '/login?redirect=/checkout')
+
+    let alive = true
+
+    async function hydrateCartProducts() {
+      if (storedItems.length === 0) return
+
+      try {
+        const response = await fetch(`${API_URL}/products?limit=1000&isActive=true`, { cache: 'no-store' })
+        const json = await response.json()
+        if (!alive || !response.ok || !Array.isArray(json.data)) return
+
+        const productsBySlug = new Map<string, Product>(json.data.map((product: any) => {
+          const mappedProduct = mapApiProduct(product)
+          return [mappedProduct.slug, mappedProduct]
+        }))
+        setItems((current) => current.map((item) => {
+          const freshProduct = productsBySlug.get(item.product.slug)
+          return freshProduct ? { ...item, product: freshProduct } : item
+        }))
+      } catch (error) {
+        console.error('Error refreshing cart products', error)
+      }
+    }
+
+    hydrateCartProducts()
+    return () => {
+      alive = false
+    }
   }, [])
 
   useEffect(() => {

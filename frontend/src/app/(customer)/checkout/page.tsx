@@ -140,9 +140,7 @@ function buildPaymentOptions(methods: PaymentMethodRecord[]): PaymentOption[] {
       methodCode: method.code,
       paymentAccountId: account.id,
       label: account.bankName || method.label,
-      description: account.accountNumber
-        ? `${account.accountNumber}${account.accountHolder ? ` a.n. ${account.accountHolder}` : ''}`
-        : method.description,
+      description: 'Transfer ke nomor rekening, lalu upload bukti pembayaran untuk diverifikasi admin.',
       category: method.category,
       config: {
         ...method.config,
@@ -352,8 +350,14 @@ export default function CheckoutPage() {
 
     const storedCheckoutItems = readCheckoutItems()
     const checkedCartItems = readCartItems().filter((item) => item.checked)
-    const initialCheckoutItems = storedCheckoutItems.length > 0 ? storedCheckoutItems : checkedCartItems
+    const isBuyNowCheckout = new URLSearchParams(window.location.search).get('mode') === 'buy-now'
+    const initialCheckoutItems = isBuyNowCheckout
+      ? storedCheckoutItems
+      : checkedCartItems.length > 0
+        ? checkedCartItems
+        : storedCheckoutItems
     setCheckoutItems(initialCheckoutItems)
+    saveCheckoutItems(initialCheckoutItems)
     refreshCheckoutItemsFromProducts(initialCheckoutItems)
     setSavedCheckoutVoucher(readCheckoutVoucher())
 

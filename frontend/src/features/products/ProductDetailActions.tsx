@@ -18,7 +18,12 @@ export default function ProductDetailActions({
   const [checkoutHref, setCheckoutHref] = useState('/login?redirect=/checkout')
 
   useEffect(() => {
-    setCheckoutHref(localStorage.getItem('access_token') ? '/checkout' : '/login?redirect=/checkout')
+    const buyNowPath = '/checkout?mode=buy-now'
+    setCheckoutHref(
+      localStorage.getItem('access_token')
+        ? buyNowPath
+        : `/login?redirect=${encodeURIComponent(buyNowPath)}`,
+    )
   }, [])
 
   function handleAddToCart() {

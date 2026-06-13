@@ -75,6 +75,26 @@ function MethodStatusBadge({ method, activeOverride }: { method: PaymentMethodRe
   )
 }
 
+function isCompleteBankAccount(account: BankAccountConfig) {
+  return Boolean(account.bankName?.trim() && account.accountNumber?.trim() && account.accountHolder?.trim())
+}
+
+function getBankAccountLabel(account: BankAccountConfig) {
+  return account.bankName?.trim() ? `Transfer Bank - ${account.bankName}` : `Transfer Bank ${account.id}`
+}
+
+function getBankAccountSubtitle(account: BankAccountConfig) {
+  if (!account.accountNumber?.trim()) return `Slot rekening transfer ${account.id}`
+  return `${account.accountNumber}${account.accountHolder?.trim() ? ` a.n. ${account.accountHolder}` : ''}`
+}
+
+function getAttachmentKind(url: string) {
+  const cleanUrl = url.split('?')[0].toLowerCase()
+  if (cleanUrl.endsWith('.pdf')) return 'pdf'
+  if (/\.(jpg|jpeg|png|webp)$/.test(cleanUrl)) return 'image'
+  return 'file'
+}
+
 function Toggle({
   checked,
   disabled,
@@ -138,6 +158,7 @@ export default function PaymentMethodManagementScreen() {
   const [methods, setMethods] = useState<PaymentMethodRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodRecord | null>(null)
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState('')
   const [form, setForm] = useState<PaymentMethodForm>(emptyForm)
   const [savingCode, setSavingCode] = useState('')
   const [isUploadingQris, setIsUploadingQris] = useState(false)
@@ -165,13 +186,15 @@ export default function PaymentMethodManagementScreen() {
     return () => window.clearTimeout(timeout)
   }, [toast])
 
-  function openEditModal(method: PaymentMethodRecord) {
+  function openEditModal(method: PaymentMethodRecord, bankAccountId = '') {
     setSelectedMethod(method)
+    setSelectedBankAccountId(bankAccountId)
     setForm(buildForm(method))
   }
 
   function closeEditModal() {
     setSelectedMethod(null)
+    setSelectedBankAccountId('')
     setForm(emptyForm)
   }
 
@@ -279,7 +302,9 @@ export default function PaymentMethodManagementScreen() {
           : {}
 
       const updated = await updateAdminPaymentMethod(selectedMethod.code, {
-        isActive: form.isActive,
+        isActive: selectedMethod.code === 'bank_transfer'
+          ? form.bankAccounts.some((account) => Boolean(account.isActive))
+          : form.isActive,
         config,
       })
       updateMethod(updated)
@@ -292,42 +317,118 @@ export default function PaymentMethodManagementScreen() {
     }
   }
 
-  const tableRows = methods.map((method) => ({
-    id: method.code,
-    mobileTitle: method.label,
-    mobileSubtitle: method.code,
-    mobileAside: <MethodStatusBadge method={method} />,
-    mobileMeta: method.isLocked ? (
-      <span className="text-sm text-navy-500">Metode ini masih coming soon.</span>
-    ) : (
-      <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
-        <Pencil className="h-4 w-4" />
-        Edit
-      </Button>
-    ),
-    cells: [
-      <div key={`${method.code}-name`}>
-        <p className="font-semibold text-navy-900">{method.label}</p>
-        <p className="mt-0.5 text-xs font-medium text-navy-500">{method.code}</p>
-      </div>,
-      <MethodStatusBadge key={`${method.code}-status`} method={method} />,
-      <div key={`${method.code}-edit`} className="flex justify-end">
-        {method.isLocked ? (
+  const virtualAccountMethods = methods.filter((method) => method.category === 'VIRTUAL_ACCOUNT')
+  const primaryVirtualAccountMethod = virtualAccountMethods[0]
+  const tableRows = [
+    ...methods.flatMap((method) => {
+      if (method.category === 'VIRTUAL_ACCOUNT') return []
+
+      if (method.code !== 'bank_transfer') {
+        return [{
+          id: method.code,
+          mobileTitle: method.label,
+          mobileSubtitle: method.code,
+          mobileAside: <MethodStatusBadge method={method} />,
+          mobileMeta: method.isLocked ? (
+            <span className="text-sm text-navy-500">Metode ini masih coming soon.</span>
+          ) : (
+            <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Button>
+          ),
+          cells: [
+            <div key={`${method.code}-name`}>
+              <p className="font-semibold text-navy-900">{method.label}</p>
+              <p className="mt-0.5 text-xs font-medium text-navy-500">{method.code}</p>
+            </div>,
+            <MethodStatusBadge key={`${method.code}-status`} method={method} />,
+            <div key={`${method.code}-edit`} className="flex justify-end">
+              {method.isLocked ? (
+                <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-navy-100 px-3 text-xs font-semibold text-navy-400">
+                  <Lock className="h-4 w-4" />
+                  Locked
+                </span>
+              ) : (
+                <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Button>
+              )}
+            </div>,
+          ],
+        }]
+      }
+
+      const accounts = buildForm(method).bankAccounts
+      return accounts.map((account) => {
+        const bankLogo = getBankLogo(account.bankName)
+        const accountIsActive = method.isActive && Boolean(account.isActive) && isCompleteBankAccount(account)
+
+        return {
+          id: `${method.code}:${account.id}`,
+          mobileTitle: getBankAccountLabel(account),
+          mobileSubtitle: getBankAccountSubtitle(account),
+          mobileAside: <MethodStatusBadge method={method} activeOverride={accountIsActive} />,
+          mobileMeta: (
+            <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method, account.id)}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Button>
+          ),
+          cells: [
+            <div key={`${method.code}-${account.id}-name`} className="flex items-center gap-3">
+              <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-navy-50 p-2">
+                {bankLogo ? (
+                  <Image src={bankLogo} alt={account.bankName || getBankAccountLabel(account)} className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-xs font-bold text-navy-400">BANK</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-navy-900">{getBankAccountLabel(account)}</p>
+                <p className="mt-0.5 truncate text-xs font-medium text-navy-500">{getBankAccountSubtitle(account)}</p>
+              </div>
+            </div>,
+            <MethodStatusBadge key={`${method.code}-${account.id}-status`} method={method} activeOverride={accountIsActive} />,
+            <div key={`${method.code}-${account.id}-edit`} className="flex justify-end">
+              <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method, account.id)}>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            </div>,
+          ],
+        }
+      })
+    }),
+    ...(primaryVirtualAccountMethod ? [{
+      id: 'virtual_account',
+      mobileTitle: 'Virtual Account',
+      mobileSubtitle: virtualAccountMethods.map((method) => method.label.replace(/\s*Virtual Account$/i, '')).join(', '),
+      mobileAside: <MethodStatusBadge method={primaryVirtualAccountMethod} />,
+      mobileMeta: <span className="text-sm text-navy-500">Metode ini masih coming soon.</span>,
+      cells: [
+        <div key="virtual-account-name">
+          <p className="font-semibold text-navy-900">Virtual Account</p>
+          <p className="mt-0.5 text-xs font-medium text-navy-500">
+            {virtualAccountMethods.map((method) => method.label.replace(/\s*Virtual Account$/i, '')).join(', ')}
+          </p>
+        </div>,
+        <MethodStatusBadge key="virtual-account-status" method={primaryVirtualAccountMethod} />,
+        <div key="virtual-account-edit" className="flex justify-end">
           <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-navy-100 px-3 text-xs font-semibold text-navy-400">
             <Lock className="h-4 w-4" />
             Locked
           </span>
-        ) : (
-          <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
-            <Pencil className="h-4 w-4" />
-            Edit
-          </Button>
-        )}
-      </div>,
-    ],
-  }))
+        </div>,
+      ],
+    }] : []),
+  ]
 
   const qrisImageUrl = resolvePublicAssetUrl(form.imageUrl)
+  const visibleBankAccounts = selectedMethod?.code === 'bank_transfer' && selectedBankAccountId
+    ? form.bankAccounts.filter((account) => account.id === selectedBankAccountId)
+    : form.bankAccounts
 
   return (
     <div className="space-y-5">
@@ -358,19 +459,21 @@ export default function PaymentMethodManagementScreen() {
       <Modal
         isOpen={Boolean(selectedMethod)}
         onClose={closeEditModal}
-        title={selectedMethod ? `Edit ${selectedMethod.label}` : 'Edit Metode Pembayaran'}
+        title={selectedMethod ? `Edit ${selectedMethod.code === 'bank_transfer' && selectedBankAccountId ? `Transfer Bank ${selectedBankAccountId}` : selectedMethod.label}` : 'Edit Metode Pembayaran'}
         size="lg"
         className="max-h-[90vh] overflow-y-auto"
       >
         {selectedMethod ? (
           <div className="space-y-5">
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-navy-100 bg-surface-container-low px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-navy-900">Status Metode</p>
-                <p className="mt-0.5 text-xs text-navy-500">Metode aktif akan muncul di checkout jika konfigurasinya lengkap.</p>
+            {selectedMethod.code !== 'bank_transfer' ? (
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-navy-100 bg-surface-container-low px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-navy-900">Status Metode</p>
+                  <p className="mt-0.5 text-xs text-navy-500">Metode aktif akan muncul di checkout jika konfigurasinya lengkap.</p>
+                </div>
+                <Toggle checked={form.isActive} onChange={(checked) => setForm((current) => ({ ...current, isActive: checked }))} />
               </div>
-              <Toggle checked={form.isActive} onChange={(checked) => setForm((current) => ({ ...current, isActive: checked }))} />
-            </div>
+            ) : null}
 
             {selectedMethod.code === 'qris_manual' ? (
               <div className="space-y-4">
@@ -415,9 +518,10 @@ export default function PaymentMethodManagementScreen() {
               </div>
             ) : selectedMethod.code === 'bank_transfer' ? (
               <div className="space-y-4">
-                {form.bankAccounts.map((account) => {
+                {visibleBankAccounts.map((account) => {
                   const bankLogo = getBankLogo(account.bankName)
                   const attachmentUrl = resolvePublicAssetUrl(account.savingsBookAttachmentUrl ?? '')
+                  const attachmentKind = attachmentUrl ? getAttachmentKind(attachmentUrl) : ''
 
                   return (
                     <div key={account.id} className="rounded-xl border border-navy-100 bg-white p-4">
@@ -478,34 +582,67 @@ export default function PaymentMethodManagementScreen() {
                         </label>
                       </div>
 
-                      <div className="mt-4 flex flex-col gap-3 rounded-lg border border-navy-100 bg-navy-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-navy-900">Lampiran buku tabungan</p>
-                          {attachmentUrl ? (
-                            <a
-                              href={attachmentUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-gold-600 hover:text-gold-700"
-                            >
-                              <FileText className="h-4 w-4 flex-shrink-0" />
-                              <span className="truncate">Lihat lampiran</span>
-                            </a>
-                          ) : (
-                            <p className="mt-1 text-sm text-navy-500">Belum ada lampiran</p>
-                          )}
+                      <div className="mt-4 rounded-lg border border-navy-100 bg-navy-50 p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-navy-900">Lampiran buku tabungan</p>
+                            {attachmentUrl ? (
+                              <a
+                                href={attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 inline-flex min-w-0 items-center gap-1 text-sm font-semibold text-gold-600 hover:text-gold-700"
+                              >
+                                <FileText className="h-4 w-4 flex-shrink-0" />
+                                <span className="truncate">Buka lampiran</span>
+                              </a>
+                            ) : (
+                              <p className="mt-1 text-sm text-navy-500">Belum ada lampiran</p>
+                            )}
+                          </div>
+                          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-gold-400 px-4 py-2 text-sm font-semibold text-gold-600 transition-colors hover:bg-gold-50">
+                            <UploadCloud className="h-4 w-4" />
+                            {uploadingBankAccountId === account.id ? 'Mengupload...' : attachmentUrl ? 'Ganti Lampiran' : 'Upload'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept=".jpg,.jpeg,.png,.pdf"
+                              disabled={Boolean(uploadingBankAccountId)}
+                              onChange={(event) => handleSavingsBookChange(account.id, event.target.files?.[0] ?? null)}
+                            />
+                          </label>
                         </div>
-                        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-gold-400 px-4 py-2 text-sm font-semibold text-gold-600 transition-colors hover:bg-gold-50">
-                          <UploadCloud className="h-4 w-4" />
-                          {uploadingBankAccountId === account.id ? 'Mengupload...' : 'Upload'}
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept=".jpg,.jpeg,.png,.pdf"
-                            disabled={Boolean(uploadingBankAccountId)}
-                            onChange={(event) => handleSavingsBookChange(account.id, event.target.files?.[0] ?? null)}
-                          />
-                        </label>
+
+                        {attachmentUrl ? (
+                          <div className="mt-3 overflow-hidden rounded-lg border border-navy-100 bg-white">
+                            {attachmentKind === 'image' ? (
+                              <a href={attachmentUrl} target="_blank" rel="noreferrer" className="block">
+                                <Image
+                                  src={attachmentUrl}
+                                  alt={`Preview lampiran buku tabungan Transfer Bank ${account.id}`}
+                                  width={720}
+                                  height={420}
+                                  unoptimized
+                                  className="max-h-[320px] w-full object-contain p-3"
+                                />
+                              </a>
+                            ) : (
+                              <a
+                                href={attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex min-h-36 items-center justify-center gap-3 p-5 text-center text-sm font-semibold text-navy-700 hover:bg-navy-50"
+                              >
+                                <FileText className="h-8 w-8 text-gold-600" />
+                                <span>{attachmentKind === 'pdf' ? 'Preview PDF tersedia di tab baru' : 'Preview lampiran tersedia di tab baru'}</span>
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="mt-3 flex min-h-32 items-center justify-center rounded-lg border border-dashed border-navy-200 bg-white px-4 text-center text-sm font-semibold text-navy-400">
+                            Preview lampiran akan tampil setelah file diupload.
+                          </div>
+                        )}
                       </div>
                     </div>
                   )

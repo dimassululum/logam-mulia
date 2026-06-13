@@ -36,12 +36,44 @@ function writeJson<T>(key: string, value: T) {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+function isLargeInlineAsset(value: unknown) {
+  return typeof value === 'string' && value.startsWith('data:')
+}
+
+function sanitizeProductForStorage(product: Product): Product {
+  return {
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    description: product.description || '',
+    pricePerGram: product.pricePerGram,
+    weightGram: product.weightGram,
+    totalPrice: product.totalPrice,
+    stock: product.stock,
+    imageUrl: isLargeInlineAsset(product.imageUrl) ? '' : product.imageUrl || '',
+    category: product.category || '',
+    purity: product.purity || '',
+    displayRating: product.displayRating,
+    reviewCount: product.reviewCount,
+    soldCount: product.soldCount,
+    createdAt: product.createdAt || '',
+    updatedAt: product.updatedAt || '',
+  }
+}
+
+function sanitizeCartItemsForStorage(items: LocalCartItem[]) {
+  return items.map((item) => ({
+    ...item,
+    product: sanitizeProductForStorage(item.product),
+  }))
+}
+
 export function readCartItems() {
   return readJson<LocalCartItem[]>(CART_KEY, [])
 }
 
 export function saveCartItems(items: LocalCartItem[]) {
-  writeJson(CART_KEY, items)
+  writeJson(CART_KEY, sanitizeCartItemsForStorage(items))
   emitCartUpdated()
 }
 
@@ -52,7 +84,7 @@ export function addProductToCart(product: Product, quantity = 1) {
   if (existing) {
     existing.quantity += quantity
   } else {
-    items.push({ product, quantity, checked: true })
+    items.push({ product: sanitizeProductForStorage(product), quantity, checked: true })
   }
 
   saveCartItems(items)
@@ -73,7 +105,7 @@ export function onCartUpdated(listener: () => void) {
 }
 
 export function saveCheckoutItems(items: LocalCartItem[]) {
-  writeJson(CHECKOUT_KEY, items)
+  writeJson(CHECKOUT_KEY, sanitizeCartItemsForStorage(items))
 }
 
 export function readCheckoutItems() {
