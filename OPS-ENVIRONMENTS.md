@@ -15,14 +15,14 @@ Gunakan base compose plus override environment:
 ```powershell
 docker.exe compose --env-file .env.local -f docker-compose.stack.yml -f docker-compose.local.yml up -d
 docker.exe compose -p logam-mulia-staging --env-file .env.staging -f docker-compose.stack.yml -f docker-compose.staging.yml up -d
-docker.exe compose -p logam-mulia-prod --env-file .env.production -f docker-compose.stack.yml -f docker-compose.prod.yml up -d
+docker.exe compose -p logam-mulia --env-file .env.production -f docker-compose.stack.yml -f docker-compose.prod.yml up -d
 ```
 
 Project name yang beda membuat network dan volume terpisah:
 
 - `logam-mulia-local_*`
 - `logam-mulia-staging_*`
-- `logam-mulia-prod_*`
+- `logam-mulia_*` untuk production live
 
 ## First-Time Setup
 
@@ -51,12 +51,29 @@ cloudflared/staging-credentials.json
 
 5. Update `cloudflared/config.staging.yml` dengan tunnel ID staging.
 
+6. Untuk production, pastikan `.env.production` menunjuk ke credential file yang benar:
+
+```text
+CLOUDFLARED_CONFIG_FILE=./cloudflared/config.prod.yml
+CLOUDFLARED_CREDENTIALS_FILE=./cloudflared/<production-tunnel-id>.json
+```
+
+Credential path harus file JSON, bukan folder. Override compose sudah memakai `create_host_path: false`, jadi deploy akan gagal cepat kalau file hilang dan tidak membuat folder kosong.
+
 ## Deploy
 
 Staging:
 
 ```powershell
 .\scripts\deploy-staging.ps1
+```
+
+Jika Docker build di mesin server sedang menggantung, staging bisa di-boot sementara dari image lokal yang sudah ada:
+
+```powershell
+docker.exe tag logam-mulia-backend:latest logam-mulia-staging-backend:latest
+docker.exe tag logam-mulia-frontend:latest logam-mulia-staging-frontend:latest
+.\scripts\deploy-staging.ps1 -SkipBuild
 ```
 
 Production:

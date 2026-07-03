@@ -10,10 +10,20 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: always
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    command: tunnel --no-autoupdate --protocol http2 --config /etc/cloudflared/config.yml run
     volumes:
-      - ${CLOUDFLARED_CONFIG_FILE:-./cloudflared/config.staging.yml}:/etc/cloudflared/config.yml:ro
-      - ${CLOUDFLARED_CREDENTIALS_FILE:-./cloudflared/staging-credentials.json}:/etc/cloudflared/credentials.json:ro
+      - type: bind
+        source: ${CLOUDFLARED_CONFIG_FILE:-./cloudflared/config.staging.yml}
+        target: /etc/cloudflared/config.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CLOUDFLARED_CREDENTIALS_FILE:-./cloudflared/staging-credentials.json}
+        target: /etc/cloudflared/credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       backend:
         condition: service_healthy

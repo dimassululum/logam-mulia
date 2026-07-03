@@ -1,4 +1,4 @@
-tunnel: REPLACE_WITH_PROD_TUNNEL_ID
+tunnel: 3f9013fc-10d9-46ca-a67a-a652562539d7
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:

@@ -2,18 +2,60 @@ services:
   backend:
     ports:
       - "${BACKEND_BIND_ADDR:-127.0.0.1}:${BACKEND_HOST_PORT:-5000}:5000"
+    environment:
+      HTTPS_PROXY: http://payment-proxy-tunnel:3128
+      https_proxy: http://payment-proxy-tunnel:3128
+      NO_PROXY: localhost,127.0.0.1,db,backend,frontend
+      no_proxy: localhost,127.0.0.1,db,backend,frontend
+    depends_on:
+      payment-proxy-tunnel:
+        condition: service_healthy
 
   frontend:
     ports:
       - "${FRONTEND_BIND_ADDR:-127.0.0.1}:${FRONTEND_HOST_PORT:-4000}:3000"
 
+  payment-proxy-tunnel:
+    build:
+      context: ./infra/payment-proxy
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      TARGET_HOST: ${PAYMENT_PROXY_HOST:-202.155.13.59}
+      TARGET_USER: ${PAYMENT_PROXY_USER:-payment-tunnel}
+    volumes:
+      - type: bind
+        source: ${PAYMENT_PROXY_SSH_KEY_PATH:?Set PAYMENT_PROXY_SSH_KEY_PATH in .env.production}
+        target: /run/secrets/payment_proxy_ssh_key
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - logam-mulia-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3128"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: always
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    command: tunnel --no-autoupdate --protocol http2 --config /etc/cloudflared/config.yml run
     volumes:
-      - ${CLOUDFLARED_CONFIG_FILE:-./cloudflared/config.prod.yml}:/etc/cloudflared/config.yml:ro
-      - ${CLOUDFLARED_CREDENTIALS_FILE:-./cloudflared/prod-credentials.json}:/etc/cloudflared/credentials.json:ro
+      - type: bind
+        source: ${CLOUDFLARED_CONFIG_FILE:-./cloudflared/config.prod.yml}
+        target: /etc/cloudflared/config.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CLOUDFLARED_CREDENTIALS_FILE:-./cloudflared/3f9013fc-10d9-46ca-a67a-a652562539d7.json}
+        target: /etc/cloudflared/credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       backend:
         condition: service_healthy
