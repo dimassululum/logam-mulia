@@ -30,6 +30,7 @@ interface FetchAdminOrdersParams {
 }
 
 interface CreateOrderInput {
+  checkoutRequestId?: string
   profile: GuestCheckoutProfile
   ordererName: string
   checkoutItems: LocalCartItem[]
@@ -67,6 +68,7 @@ export async function createCustomerOrder(input: CreateOrderInput) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      checkoutRequestId: input.checkoutRequestId,
       email: input.profile.email,
       customerName: input.ordererName,
       customerPhone: input.selectedAddress?.phone || input.profile.phone || '',

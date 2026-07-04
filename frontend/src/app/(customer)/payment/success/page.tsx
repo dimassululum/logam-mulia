@@ -13,6 +13,16 @@ export default function PaymentSuccessPage() {
   const [show, setShow] = useState(false)
   const [order, setOrder] = useState(readCurrentOrder())
   const waLink = useCompanyWhatsAppLink('Halo admin, saya ingin bertanya tentang pesanan yang sedang diproses.')
+  const normalizedStatus = String(order?.status || '').toLowerCase()
+  const isMidtransOrder = order?.paymentMethodConfig?.provider === 'midtrans'
+  const isPaymentConfirmed = ['paid', 'success', 'completed', 'selesai'].includes(normalizedStatus)
+  const title = isMidtransOrder && isPaymentConfirmed ? 'Pembayaran Berhasil' : 'Menunggu Verifikasi'
+  const description = isMidtransOrder && isPaymentConfirmed
+    ? ''
+    : 'Terima kasih. Bukti pembayaran Anda sudah kami terima dan akan diverifikasi oleh admin.'
+  const notice = isMidtransOrder && isPaymentConfirmed
+    ? 'Pesanan akan diproses oleh admin setelah pembayaran berhasil.'
+    : 'Pesanan akan diproses setelah pembayaran dikonfirmasi admin.'
 
   useEffect(() => {
     // Small delay to trigger animation after mount
@@ -46,12 +56,14 @@ export default function PaymentSuccessPage() {
 
           <div className="pt-10 pb-12 px-6 md:px-12 flex flex-col items-center">
             <h1 className="font-heading text-[28px] font-bold text-navy-900 mb-3 animate-in slide-in-from-bottom-4 duration-500 delay-300 fill-mode-both">
-              Menunggu Verifikasi
+              {title}
             </h1>
             <div className="w-16 h-1 bg-gold-400 rounded-full mb-6 animate-in slide-in-from-bottom-4 duration-500 delay-400 fill-mode-both"></div>
-            <p className="text-navy-600 text-base leading-relaxed max-w-md animate-in slide-in-from-bottom-4 duration-500 delay-500 fill-mode-both">
-              Terima kasih. Bukti pembayaran Anda sudah kami terima dan akan diverifikasi oleh admin.
-            </p>
+            {description ? (
+              <p className="text-navy-600 text-base leading-relaxed max-w-md animate-in slide-in-from-bottom-4 duration-500 delay-500 fill-mode-both">
+                {description}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -90,7 +102,7 @@ export default function PaymentSuccessPage() {
           <div className="mt-8 p-4 bg-navy-50 rounded-xl flex items-start gap-4 border border-navy-100">
             <Clock className="w-6 h-6 text-navy-900 flex-shrink-0" />
             <p className="text-sm text-navy-700 leading-relaxed">
-              Pesanan akan diproses setelah pembayaran dikonfirmasi admin.
+              {notice}
             </p>
           </div>
         </div>

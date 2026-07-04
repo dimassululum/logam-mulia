@@ -1,10 +1,14 @@
 import { PaymentMethod, PaymentMethodStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../core/config/database';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../core/utils/errors';
-import type { UpdatePaymentMethodInput } from '../schema/payment-method.schema';
+import type { UpdatePaymentGatewayModeInput, UpdatePaymentMethodInput } from '../schema/payment-method.schema';
 
 export const QRIS_MANUAL_CODE = 'qris_manual';
 export const BANK_TRANSFER_CODE = 'bank_transfer';
+export const PAYMENT_GATEWAY_MODE_KEY = 'payment_gateway_mode';
+export const MIDTRANS_METHOD_CODES = ['bri_va', 'bni_va', 'mandiri_va', 'cimb_va', 'permata_va', 'qris_midtrans'];
+
+type PaymentGatewayMode = UpdatePaymentGatewayModeInput['mode'];
 
 type PaymentMethodRecord = PaymentMethod;
 
@@ -15,6 +19,8 @@ interface PaymentMethodConfig {
   accountHolder?: string;
   savingsBookAttachmentUrl?: string;
   instructions?: string;
+  provider?: string;
+  channel?: string;
   bankAccounts?: BankAccountConfig[];
 }
 
@@ -202,6 +208,15 @@ function serializePublicPaymentMethod(method: PaymentMethodRecord) {
   };
 }
 
+function serializeCheckoutMidtransMethod(method: PaymentMethodRecord) {
+  const serialized = serializePaymentMethod(method);
+
+  return {
+    ...serialized,
+    isUsable: true,
+  };
+}
+
 async function findPaymentMethod(code: string) {
   const method = await prisma.paymentMethod.findUnique({ where: { code } });
   if (!method) throw new NotFoundError('Metode pembayaran');
@@ -234,6 +249,23 @@ export async function getAdminPaymentMethods() {
   return methods.map(serializePaymentMethod);
 }
 
+export async function getPaymentGatewayMode(): Promise<PaymentGatewayMode> {
+  const setting = await prisma.setting.findUnique({ where: { key: PAYMENT_GATEWAY_MODE_KEY } });
+  return setting?.value === 'midtrans' ? 'midtrans' : 'manual';
+}
+
+export async function updatePaymentGatewayMode(input: UpdatePaymentGatewayModeInput) {
+  const setting = await prisma.setting.upsert({
+    where: { key: PAYMENT_GATEWAY_MODE_KEY },
+    update: { value: input.mode },
+    create: { key: PAYMENT_GATEWAY_MODE_KEY, value: input.mode },
+  });
+
+  return {
+    mode: setting.value === 'midtrans' ? 'midtrans' : 'manual',
+  };
+}
+
 export async function getPublicPaymentMethods() {
   const methods = await prisma.paymentMethod.findMany({
     where: {
@@ -245,6 +277,30 @@ export async function getPublicPaymentMethods() {
   });
 
   return methods.map(serializePublicPaymentMethod).filter((method) => method.isUsable);
+}
+
+export async function getCheckoutPaymentMethods() {
+  const mode = await getPaymentGatewayMode();
+
+  if (mode === 'manual') {
+    const methods = await getPublicPaymentMethods();
+    return { mode, methods };
+  }
+
+  const methods = await prisma.paymentMethod.findMany({
+    where: {
+      code: { in: MIDTRANS_METHOD_CODES },
+      isActive: true,
+      isLocked: false,
+      status: PaymentMethodStatus.READY,
+    },
+    orderBy: { sortOrder: 'asc' },
+  });
+
+  return {
+    mode,
+    methods: methods.map(serializeCheckoutMidtransMethod),
+  };
 }
 
 export async function updatePaymentMethod(code: string, input: UpdatePaymentMethodInput) {
@@ -319,6 +375,20 @@ export async function updateBankAccountAttachment(accountId: string, file: Expre
 export async function resolveActivePaymentMethodForOrder(code: string, bankAccountId?: string) {
   const method = await findPaymentMethod(code);
   const serialized = serializePaymentMethod(method);
+  const mode = await getPaymentGatewayMode();
+
+  if (mode === 'midtrans' && MIDTRANS_METHOD_CODES.includes(method.code)) {
+    if (!method.isActive || method.isLocked || method.status !== PaymentMethodStatus.READY) {
+      throw new BadRequestError('Metode pembayaran tidak tersedia. Silakan pilih metode pembayaran lain.');
+    }
+
+    return {
+      code: method.code,
+      label: method.label,
+      category: method.category,
+      config: asConfig(method.config),
+    };
+  }
 
   if (!serialized.isUsable) {
     throw new BadRequestError('Metode pembayaran tidak tersedia. Silakan pilih metode pembayaran lain.');

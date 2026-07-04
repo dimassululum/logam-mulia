@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, CreditCard, HeadphonesIcon, Lock, Mail, MapPin, Plus, QrCode, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
@@ -34,11 +34,12 @@ import { mapApiProduct } from '@/features/products/product-api'
 import { useCompanyWhatsAppLink } from '@/features/company/useCompanyContact'
 import { createCustomerOrder } from '@/features/orders/order-api'
 import {
-  fetchPublicPaymentMethods,
+  fetchCheckoutPaymentMethods,
   type BankAccountConfig,
+  type PaymentGatewayMode,
   type PaymentMethodRecord,
 } from '@/features/payment-methods/payment-method-api'
-import { getBankLogo } from '@/features/payment-methods/bank-assets'
+import { getPaymentLogo } from '@/features/payment-methods/bank-assets'
 import { SHIPPING_CARRIERS, ShippingCarrierLogo } from '@/features/shipping/shipping-carriers'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ interface PaymentOption {
   description?: string | null
   category: PaymentMethodRecord['category']
   config: PaymentMethodRecord['config']
+  gatewayMode: PaymentGatewayMode
 }
 
 // ── Static data ───────────────────────────────────────────────────────────────
@@ -103,7 +105,24 @@ function isCompleteBankAccount(account: BankAccountConfig) {
   return Boolean(account.bankName?.trim() && account.accountNumber?.trim() && account.accountHolder?.trim())
 }
 
-function buildPaymentOptions(methods: PaymentMethodRecord[]): PaymentOption[] {
+function getMidtransPaymentDescription(method: PaymentMethodRecord) {
+  if (method.category === 'QRIS') return 'Scan QRIS dari Midtrans setelah pembayaran dibuat.'
+  return 'Virtual Account akan dibuat otomatis setelah backend pembayaran Midtrans diaktifkan.'
+}
+
+function buildPaymentOptions(methods: PaymentMethodRecord[], mode: PaymentGatewayMode): PaymentOption[] {
+  if (mode === 'midtrans') {
+    return methods.map((method) => ({
+      id: method.code,
+      methodCode: method.code,
+      label: method.label,
+      description: getMidtransPaymentDescription(method),
+      category: method.category,
+      config: method.config,
+      gatewayMode: mode,
+    }))
+  }
+
   return methods.flatMap((method) => {
     if (method.code !== 'bank_transfer') {
       return [{
@@ -113,6 +132,7 @@ function buildPaymentOptions(methods: PaymentMethodRecord[]): PaymentOption[] {
         description: method.description,
         category: method.category,
         config: method.config,
+        gatewayMode: mode,
       }]
     }
 
@@ -148,13 +168,28 @@ function buildPaymentOptions(methods: PaymentMethodRecord[]): PaymentOption[] {
         accountNumber: account.accountNumber,
         accountHolder: account.accountHolder,
       },
+      gatewayMode: mode,
     }))
+  })
+}
+
+function createCheckoutRequestId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16)
+    const value = character === 'x' ? random : (random & 0x3) | 0x8
+    return value.toString(16)
   })
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
   const router = useRouter()
+  const checkoutInFlightRef = useRef(false)
+  const checkoutRequestIdRef = useRef(createCheckoutRequestId())
   const waLink = useCompanyWhatsAppLink('Halo admin, saya butuh bantuan terkait checkout.')
   const [showEkspedisiModal, setShowEkspedisiModal] = useState(false)
   const [showButikModal, setShowButikModal] = useState(false)
@@ -192,6 +227,7 @@ export default function CheckoutPage() {
   const [isLoadingDestinations, setIsLoadingDestinations] = useState(false)
   const [destinationError, setDestinationError] = useState('')
   const [addressFormError, setAddressFormError] = useState('')
+  const [paymentMode, setPaymentMode] = useState<PaymentGatewayMode>('manual')
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRecord[]>([])
   const [selectedPaymentOptionId, setSelectedPaymentOptionId] = useState('')
   const [isLoadingPaymentMethods, setIsLoadingPaymentMethods] = useState(false)
@@ -229,11 +265,12 @@ export default function CheckoutPage() {
       setIsLoadingPaymentMethods(true)
       setPaymentMethodError('')
       try {
-        const methods = await fetchPublicPaymentMethods()
+        const result = await fetchCheckoutPaymentMethods()
         if (!alive) return
-        setPaymentMethods(methods)
+        setPaymentMode(result.mode)
+        setPaymentMethods(result.methods)
         setSelectedPaymentOptionId((current) => {
-          const options = buildPaymentOptions(methods)
+          const options = buildPaymentOptions(result.methods, result.mode)
           if (current && options.some((option) => option.id === current)) return current
           return options.length === 1 ? options[0].id : ''
         })
@@ -625,7 +662,7 @@ export default function CheckoutPage() {
   const discount = voucherSummary.discountAmount > 0 ? voucherSummary.discountAmount : fallbackDiscount
   const total = Math.max(0, subtotal + shippingFee - discount)
   const needsKtpUpload = !guestProfile?.hasKtp && !ktpFile
-  const paymentOptions = buildPaymentOptions(paymentMethods)
+  const paymentOptions = buildPaymentOptions(paymentMethods, paymentMode)
   const selectedPaymentOption = paymentOptions.find((option) => option.id === selectedPaymentOptionId) ?? null
   const hasPaymentMethod = Boolean(selectedPaymentOption)
   const canPay =
@@ -643,8 +680,9 @@ export default function CheckoutPage() {
   )
 
   async function handlePay() {
-    if (!canPay || !guestProfile || !selectedPaymentOption) return
+    if (checkoutInFlightRef.current || !canPay || !guestProfile || !selectedPaymentOption) return
 
+    checkoutInFlightRef.current = true
     setIsSavingProfile(true)
     setCheckoutError('')
     try {
@@ -658,6 +696,7 @@ export default function CheckoutPage() {
       })
       setGuestProfile(savedProfile)
       await createCustomerOrder({
+        checkoutRequestId: checkoutRequestIdRef.current,
         profile: savedProfile,
         ordererName,
         checkoutItems,
@@ -670,10 +709,11 @@ export default function CheckoutPage() {
         voucher: checkoutVoucher,
         discountAmount: discount,
       })
-      router.push('/payment')
+      router.push(selectedPaymentOption.gatewayMode === 'midtrans' ? '/payment/midtrans' : '/payment')
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Gagal menyimpan data checkout. Coba lagi sebentar.')
-    } finally {
+      checkoutRequestIdRef.current = createCheckoutRequestId()
+      checkoutInFlightRef.current = false
       setIsSavingProfile(false)
     }
   }
@@ -890,7 +930,9 @@ export default function CheckoutPage() {
 
         {/* ── Payment Method ───────────────────────────────────────────── */}
         <section className="bg-white rounded-xl border border-navy-200 p-6 shadow-elevation-low">
-          <h2 className="font-heading text-xl font-bold text-navy-900 mb-6">Metode Pembayaran</h2>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-heading text-xl font-bold text-navy-900">Metode Pembayaran</h2>
+          </div>
           {isLoadingPaymentMethods ? (
             <div className="rounded-xl border border-navy-100 bg-navy-50 p-4 text-sm font-medium text-navy-600">
               Memuat metode pembayaran...
@@ -913,19 +955,27 @@ export default function CheckoutPage() {
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {paymentOptions.map((option) => {
-                const bankLogo = option.methodCode === 'bank_transfer' ? getBankLogo(option.config.bankName) : null
+                const paymentLogo = option.methodCode === 'bank_transfer'
+                  ? getPaymentLogo(option.config.bankName)
+                  : getPaymentLogo(option.label)
+                const selected = selectedPaymentOptionId === option.id
 
                 return (
                   <RadioCard
                     key={option.id}
                     id={`payment-${option.id}`}
-                    selected={selectedPaymentOptionId === option.id}
-                    onClick={() => setSelectedPaymentOptionId(option.id)}
+                    selected={selected}
+                    onClick={() => {
+                      setCheckoutError('')
+                      setSelectedPaymentOptionId(option.id)
+                    }}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-11 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 p-2 text-gold-700">
-                        {bankLogo ? (
-                          <Image src={bankLogo} alt={option.label} className="h-full w-full object-contain" />
+                    <div className={`flex gap-3 ${option.gatewayMode === 'midtrans' ? 'items-center' : 'items-start'}`}>
+                      <div className={`flex h-12 w-16 flex-shrink-0 items-center justify-center rounded-lg border p-2 ${
+                        option.gatewayMode === 'midtrans' ? 'border-navy-200 bg-white' : 'border-gold-200 bg-gold-50 text-gold-700'
+                      }`}>
+                        {paymentLogo ? (
+                          <Image src={paymentLogo} alt={option.label} className="h-full w-full object-contain" />
                         ) : option.category === 'QRIS' ? (
                           <QrCode className="h-6 w-6" />
                         ) : (
@@ -933,13 +983,19 @@ export default function CheckoutPage() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
+                        {option.gatewayMode === 'midtrans' ? (
                           <span className="font-bold text-navy-900">{option.label}</span>
-                          <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
-                            Tersedia
-                          </span>
-                        </div>
-                        <p className="mt-1 text-sm text-navy-600">{option.description}</p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-navy-900">{option.label}</span>
+                              <span className="rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-green-700">
+                                {selected ? 'Dipilih' : 'Tersedia'}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm text-navy-600">{option.description}</p>
+                          </>
+                        )}
                       </div>
                     </div>
                   </RadioCard>
@@ -1316,13 +1372,13 @@ export default function CheckoutPage() {
               variant="primary"
               size="lg"
               fullWidth
-              disabled={!canPay}
+              disabled={!canPay || isSavingProfile}
               isLoading={isSavingProfile}
               onClick={handlePay}
               className={!canPay ? 'opacity-50 cursor-not-allowed' : ''}
             >
               <Lock className="w-4 h-4" />
-              Bayar Sekarang
+              {selectedPaymentOption?.gatewayMode === 'midtrans' ? 'Lanjutkan Pembayaran' : 'Bayar Sekarang'}
             </Button>
           </div>
         </div>

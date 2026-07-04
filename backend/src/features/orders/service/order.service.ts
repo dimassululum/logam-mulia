@@ -5,6 +5,14 @@ import { sendEmail } from '../../../core/utils/email';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../core/utils/errors';
 import { logger } from '../../../core/utils/logger';
 import { resolveActivePaymentMethodForOrder } from '../../payment-methods/service/payment-method.service';
+import {
+  chargeMidtransPayment,
+  extractMidtransMethodCode,
+  parseMidtransPayment,
+  verifyMidtransSignature,
+  type MidtransNotificationPayload,
+  type ParsedMidtransPayment,
+} from '../../midtrans/midtrans.service';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '../schema/order.schema';
 
 const orderInclude = {
@@ -19,6 +27,8 @@ const orderListInclude = {
   user: { select: { id: true, name: true, email: true, phone: true, ktpUrl: true } },
   items: { select: { id: true, productName: true, quantity: true }, orderBy: { id: 'asc' } },
 } satisfies Prisma.OrderInclude;
+
+type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
 
 const STATIC_SHIPPING_RATES = {
   JNE: 15000,
@@ -100,6 +110,59 @@ function getStaticShippingCost(deliveryType: CreateOrderInput['deliveryType'], c
   if (deliveryType === 'butik') return 0;
   const normalizedCourier = normalizeShippingCourier(courier);
   return STATIC_SHIPPING_RATES[normalizedCourier as keyof typeof STATIC_SHIPPING_RATES] ?? 0;
+}
+
+function isMidtransMethodCode(code?: string | null) {
+  return Boolean(code && extractMidtransMethodCode(code));
+}
+
+function isPrismaUniqueConstraintError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+function assertIdempotentOrderCanBeReturned(order: OrderWithDetails) {
+  if (!order.paymentMethodCode || !isMidtransMethodCode(order.paymentMethodCode)) return;
+  if (order.status === OrderStatus.CANCELLED || order.midtransTransactionId) return;
+
+  throw new BadRequestError('Transaksi pembayaran sedang diproses. Tunggu sebentar lalu cek halaman pembayaran atau riwayat pesanan.');
+}
+
+async function findOrderByCheckoutRequestId(checkoutRequestId?: string) {
+  if (!checkoutRequestId) return null;
+  return prisma.order.findUnique({
+    where: { checkoutRequestId },
+    include: orderInclude,
+  });
+}
+
+function buildMidtransPaymentConfig(baseConfig: Prisma.JsonValue | null | undefined, payment: ParsedMidtransPayment) {
+  const base = baseConfig && typeof baseConfig === 'object' && !Array.isArray(baseConfig) ? baseConfig : {};
+
+  return {
+    ...base,
+    provider: 'midtrans',
+    transactionId: payment.transactionId,
+    paymentType: payment.paymentType,
+    transactionStatus: payment.transactionStatus,
+    fraudStatus: payment.fraudStatus,
+    vaNumber: payment.vaNumber,
+    billKey: payment.billKey,
+    billerCode: payment.billerCode,
+    qrString: payment.qrString,
+    qrUrl: payment.qrUrl,
+    expiryTime: payment.expiryTime?.toISOString() ?? null,
+  } satisfies Prisma.InputJsonObject;
+}
+
+function getOrderStatusFromMidtrans(transactionStatus?: string, fraudStatus?: string) {
+  if (transactionStatus === 'capture') {
+    return fraudStatus === 'accept' ? OrderStatus.PAID : OrderStatus.UNPAID;
+  }
+
+  if (transactionStatus === 'settlement') return OrderStatus.PAID;
+  if (transactionStatus === 'pending') return OrderStatus.UNPAID;
+  if (['deny', 'cancel', 'expire', 'failure'].includes(transactionStatus || '')) return OrderStatus.CANCELLED;
+  return null;
 }
 
 function calculateVoucherDiscount(
@@ -514,6 +577,11 @@ export function mapOrder(order: any) {
     paymentMethod: order.paymentMethod || 'QRIS Manual',
     paymentMethodConfig: order.paymentMethodConfig || order.paymentMethodRef?.config || null,
     paymentMethodCategory: order.paymentMethodRef?.category || null,
+    midtransTransactionId: order.midtransTransactionId || null,
+    midtransPaymentType: order.midtransPaymentType || null,
+    midtransTransactionStatus: order.midtransTransactionStatus || null,
+    midtransFraudStatus: order.midtransFraudStatus || null,
+    midtransExpiryTime: order.midtransExpiryTime || null,
     paymentProofUrl: order.paymentProofUrl || null,
     paymentProofUploadedAt: order.paymentProofUploadedAt || null,
     shippingMethod: deliveryMethod === 'self_pickup' ? 'Self Pickup' : order.shippingCourier || 'Ekspedisi',
@@ -593,6 +661,7 @@ function mapOrderList(order: any) {
     status: mapPublicStatus(order.status),
     paymentMethodCode: order.paymentMethodCode || null,
     paymentMethod: order.paymentMethod || 'QRIS Manual',
+    midtransTransactionStatus: order.midtransTransactionStatus || null,
     paymentProofUrl: order.paymentProofUrl || null,
     paymentProofUploadedAt: order.paymentProofUploadedAt || null,
     shippingMethod: deliveryMethod === 'self_pickup' ? 'Self Pickup' : order.shippingCourier || 'Ekspedisi',
@@ -689,6 +758,13 @@ export async function getOrderByIdForUser(id: string, userId: string) {
 }
 
 export async function createOrder(input: CreateOrderInput) {
+  const checkoutRequestId = input.checkoutRequestId?.trim();
+  const existingIdempotentOrder = await findOrderByCheckoutRequestId(checkoutRequestId);
+  if (existingIdempotentOrder) {
+    assertIdempotentOrderCanBeReturned(existingIdempotentOrder);
+    return mapOrder(existingIdempotentOrder);
+  }
+
   const user = await prisma.user.findUnique({ where: { email: input.email.trim().toLowerCase() } });
   if (!user) throw new BadRequestError('Data customer belum tersimpan. Ulangi dari halaman checkout.');
   const paymentMethod = await resolveActivePaymentMethodForOrder(input.paymentMethodCode, input.paymentAccountId);
@@ -708,7 +784,9 @@ export async function createOrder(input: CreateOrderInput) {
   const subtotal = input.items.reduce((sum, item) => sum + item.priceAtPurchase * item.quantity, 0);
   const id = nextOrderId();
 
-  const order = await prisma.$transaction(async (tx) => {
+  let order: OrderWithDetails;
+  try {
+    order = await prisma.$transaction(async (tx) => {
     const automaticVouchers = await findAutomaticVouchers(tx, user.id, input.items);
     const discountAmount = Math.min(
       subtotal,
@@ -721,6 +799,7 @@ export async function createOrder(input: CreateOrderInput) {
       data: {
         id,
         userId: user.id,
+        checkoutRequestId,
         status: OrderStatus.UNPAID,
         customerName: input.customerName,
         customerEmail: input.email.trim().toLowerCase(),
@@ -779,6 +858,73 @@ export async function createOrder(input: CreateOrderInput) {
 
     return createdOrder;
   });
+  } catch (error) {
+    if (checkoutRequestId && isPrismaUniqueConstraintError(error)) {
+      const existingOrder = await findOrderByCheckoutRequestId(checkoutRequestId);
+      if (existingOrder) {
+        assertIdempotentOrderCanBeReturned(existingOrder);
+        return mapOrder(existingOrder);
+      }
+    }
+    throw error;
+  }
+
+  if (isMidtransMethodCode(paymentMethod.code)) {
+    try {
+      const midtransMethodCode = extractMidtransMethodCode(paymentMethod.code);
+      if (!midtransMethodCode) throw new BadRequestError('Metode Midtrans tidak valid.');
+
+      const payment = await chargeMidtransPayment({
+        orderId: order.id,
+        grossAmount: toMoney(order.grandTotal),
+        methodCode: midtransMethodCode,
+        customer: {
+          firstName: input.customerName,
+          email: input.email.trim().toLowerCase(),
+          phone: input.customerPhone || user.phone,
+        },
+      });
+
+      const updatedOrder = await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          midtransTransactionId: payment.transactionId,
+          midtransPaymentType: payment.paymentType,
+          midtransTransactionStatus: payment.transactionStatus,
+          midtransFraudStatus: payment.fraudStatus,
+          midtransExpiryTime: payment.expiryTime,
+          midtransRawResponse: payment.rawResponse,
+          paymentMethodConfig: buildMidtransPaymentConfig(order.paymentMethodConfig, payment),
+          statusLogs: {
+            create: {
+              status: OrderStatus.UNPAID,
+              note: `Transaksi Midtrans dibuat untuk metode ${paymentMethod.label}.`,
+            },
+          },
+        },
+        include: orderInclude,
+      });
+
+      return mapOrder(updatedOrder);
+    } catch (error) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          status: OrderStatus.CANCELLED,
+          cancelReason: error instanceof Error ? error.message : 'Gagal membuat transaksi Midtrans.',
+          cancelledAt: new Date(),
+          statusLogs: {
+            create: {
+              status: OrderStatus.CANCELLED,
+              note: error instanceof Error ? error.message : 'Gagal membuat transaksi Midtrans.',
+            },
+          },
+        },
+      });
+
+      throw error;
+    }
+  }
 
   const mappedOrder = mapOrder(order);
 
@@ -844,6 +990,10 @@ export async function uploadPaymentProof(id: string, userId: string, file: Expre
     throw new BadRequestError('Bukti pembayaran hanya bisa diupload untuk pesanan yang masih menunggu pembayaran.');
   }
 
+  if (isMidtransMethodCode(existing.paymentMethodCode)) {
+    throw new BadRequestError('Pembayaran Midtrans tidak perlu upload bukti pembayaran.');
+  }
+
   const order = await prisma.order.update({
     where: { id },
     data: {
@@ -896,6 +1046,54 @@ export async function confirmOrderPayment(id: string, role: Role) {
   });
 
   queuePaymentConfirmedNotification(order);
+
+  return mapOrder(order);
+}
+
+export async function handleMidtransNotification(payload: MidtransNotificationPayload) {
+  verifyMidtransSignature(payload);
+
+  if (!payload.order_id) {
+    throw new BadRequestError('order_id Midtrans tidak tersedia.');
+  }
+
+  const existing = await prisma.order.findUnique({ where: { id: payload.order_id }, include: orderInclude });
+  if (!existing) throw new NotFoundError('Pesanan');
+
+  const parsedPayment = parseMidtransPayment(payload as Record<string, unknown>);
+  const nextStatus = getOrderStatusFromMidtrans(payload.transaction_status, payload.fraud_status);
+  const statusChanged = Boolean(nextStatus && existing.status !== nextStatus);
+
+  const order = await prisma.order.update({
+    where: { id: existing.id },
+    data: {
+      ...(nextStatus ? { status: nextStatus } : {}),
+      midtransTransactionId: parsedPayment.transactionId ?? existing.midtransTransactionId,
+      midtransPaymentType: parsedPayment.paymentType ?? existing.midtransPaymentType,
+      midtransTransactionStatus: parsedPayment.transactionStatus ?? existing.midtransTransactionStatus,
+      midtransFraudStatus: parsedPayment.fraudStatus ?? existing.midtransFraudStatus,
+      midtransExpiryTime: parsedPayment.expiryTime ?? existing.midtransExpiryTime,
+      midtransRawResponse: parsedPayment.rawResponse,
+      paymentMethodConfig: buildMidtransPaymentConfig(existing.paymentMethodConfig, parsedPayment),
+      ...(nextStatus === OrderStatus.CANCELLED && {
+        cancelledAt: existing.cancelledAt ?? new Date(),
+        cancelReason: existing.cancelReason ?? `Midtrans ${payload.transaction_status || 'cancelled'}.`,
+      }),
+      ...(statusChanged && {
+        statusLogs: {
+          create: {
+            status: nextStatus!,
+            note: `Status Midtrans berubah menjadi ${payload.transaction_status || '-'}.`,
+          },
+        },
+      }),
+    },
+    include: orderInclude,
+  });
+
+  if (statusChanged && nextStatus === OrderStatus.PAID) {
+    queuePaymentConfirmedNotification(order);
+  }
 
   return mapOrder(order);
 }

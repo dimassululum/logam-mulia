@@ -11,6 +11,7 @@ const RETAINED_EMAILS = ['admin@logam-mulia-antam.com', 'dimasgroapp@gmail.com']
 const PRODUCT_DISPLAY_META_KEY = 'product_display_reviews';
 const IMAGE_ASSET_ORIGIN = 'https://assets.butikemaslogammuliastore.com';
 const BACKUP_DIR = process.env.DEMO_SEED_BACKUP_DIR || '/private/tmp/logam-mulia-demo-seed-backups';
+const LOCAL_PLACEHOLDER_IMAGE = path.resolve(__dirname, '../../frontend/public/images/lm.png');
 
 interface DemoProductSeed {
   name: string;
@@ -334,6 +335,10 @@ async function fetchImageAsDataUrl(imagePath: string) {
 
     const buffer = Buffer.from(await response.arrayBuffer());
     return `data:${response.headers.get('content-type') || mimeFromPath(imagePath)};base64,${buffer.toString('base64')}`;
+  } catch (error) {
+    console.warn(`Gagal ambil gambar ${imagePath}, pakai placeholder lokal:`, error instanceof Error ? error.message : error);
+    const buffer = await fs.readFile(LOCAL_PLACEHOLDER_IMAGE);
+    return `data:image/png;base64,${buffer.toString('base64')}`;
   } finally {
     clearTimeout(timeout);
   }

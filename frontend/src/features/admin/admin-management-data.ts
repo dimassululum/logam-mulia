@@ -52,6 +52,11 @@ export interface AdminOrderRecord {
   paymentMethodCode?: string | null
   paymentMethod: string
   paymentMethodCategory?: string | null
+  midtransTransactionId?: string | null
+  midtransPaymentType?: string | null
+  midtransTransactionStatus?: string | null
+  midtransFraudStatus?: string | null
+  midtransExpiryTime?: string | null
   paymentMethodConfig?: PaymentMethodConfig | null
   paymentProofUrl?: string | null
   paymentProofUploadedAt?: string | null
@@ -70,6 +75,18 @@ export interface PaymentMethodConfig {
   accountHolder?: string
   savingsBookAttachmentUrl?: string
   instructions?: string
+  provider?: string
+  channel?: string
+  transactionId?: string
+  paymentType?: string
+  transactionStatus?: string
+  fraudStatus?: string
+  vaNumber?: string
+  billKey?: string
+  billerCode?: string
+  qrString?: string
+  qrUrl?: string
+  expiryTime?: string | null
   bankAccounts?: {
     id: string
     bankName?: string

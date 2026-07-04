@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { FileText, Lock, Pencil, Save, UploadCloud } from 'lucide-react'
+import { AlertTriangle, FileText, Lock, Pencil, Save, UploadCloud } from 'lucide-react'
 import { resolvePublicAssetUrl } from '@/core/lib/public-url'
 import { InlineToast, type ToastTone } from '@/features/admin/admin-ui'
-import { BANK_OPTIONS, getBankLogo } from '@/features/payment-methods/bank-assets'
+import { BANK_OPTIONS, getBankLogo, getPaymentLogo } from '@/features/payment-methods/bank-assets'
 import {
+  fetchAdminPaymentGatewayMode,
   fetchAdminPaymentMethods,
+  updateAdminPaymentGatewayMode,
   updateAdminPaymentMethod,
   uploadBankAccountAttachment,
   uploadQrisImage,
   type BankAccountConfig,
+  type PaymentGatewayMode,
   type PaymentMethodRecord,
 } from '@/features/payment-methods/payment-method-api'
 import { AdminEmptyState, AdminPageHeader, AdminTable, Button, Card, Modal } from '@/shared/ui'
@@ -21,6 +24,8 @@ const MAX_QRIS_IMAGE_BYTES = MAX_QRIS_IMAGE_MB * 1024 * 1024
 const MAX_SAVINGS_BOOK_MB = 5
 const MAX_SAVINGS_BOOK_BYTES = MAX_SAVINGS_BOOK_MB * 1024 * 1024
 const BANK_ACCOUNT_SLOTS = ['1', '2', '3'] as const
+const MANUAL_METHOD_CODES = ['qris_manual', 'bank_transfer']
+const MIDTRANS_METHOD_CODES = ['bri_va', 'bni_va', 'mandiri_va', 'cimb_va', 'permata_va', 'qris_midtrans']
 
 interface PaymentMethodForm {
   isActive: boolean
@@ -156,11 +161,15 @@ function buildForm(method: PaymentMethodRecord): PaymentMethodForm {
 
 export default function PaymentMethodManagementScreen() {
   const [methods, setMethods] = useState<PaymentMethodRecord[]>([])
+  const [paymentMode, setPaymentMode] = useState<PaymentGatewayMode>('manual')
+  const [pendingPaymentMode, setPendingPaymentMode] = useState<PaymentGatewayMode | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethodRecord | null>(null)
   const [selectedBankAccountId, setSelectedBankAccountId] = useState('')
   const [form, setForm] = useState<PaymentMethodForm>(emptyForm)
   const [savingCode, setSavingCode] = useState('')
+  const [togglingCode, setTogglingCode] = useState('')
+  const [isSavingMode, setIsSavingMode] = useState(false)
   const [isUploadingQris, setIsUploadingQris] = useState(false)
   const [uploadingBankAccountId, setUploadingBankAccountId] = useState('')
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null)
@@ -168,7 +177,12 @@ export default function PaymentMethodManagementScreen() {
   async function loadMethods() {
     setIsLoading(true)
     try {
-      setMethods(await fetchAdminPaymentMethods())
+      const [nextMethods, nextMode] = await Promise.all([
+        fetchAdminPaymentMethods(),
+        fetchAdminPaymentGatewayMode(),
+      ])
+      setMethods(nextMethods)
+      setPaymentMode(nextMode)
     } catch (error) {
       setToast({ message: getErrorMessage(error, 'Gagal memuat metode pembayaran.'), tone: 'error' })
     } finally {
@@ -202,6 +216,35 @@ export default function PaymentMethodManagementScreen() {
     setMethods((current) => current.map((method) => (method.code === nextMethod.code ? nextMethod : method)))
     setSelectedMethod(nextMethod)
     setForm(buildForm(nextMethod))
+  }
+
+  async function confirmPaymentModeChange() {
+    if (!pendingPaymentMode) return
+
+    setIsSavingMode(true)
+    try {
+      const nextMode = await updateAdminPaymentGatewayMode(pendingPaymentMode)
+      setPaymentMode(nextMode)
+      setPendingPaymentMode(null)
+      setToast({ message: `Mode pembayaran diubah ke ${nextMode === 'manual' ? 'Manual' : 'Midtrans'}.`, tone: 'success' })
+    } catch (error) {
+      setToast({ message: getErrorMessage(error, 'Gagal mengubah mode pembayaran.'), tone: 'error' })
+    } finally {
+      setIsSavingMode(false)
+    }
+  }
+
+  async function handleToggleMidtransMethod(method: PaymentMethodRecord, checked: boolean) {
+    setTogglingCode(method.code)
+    try {
+      const updated = await updateAdminPaymentMethod(method.code, { isActive: checked })
+      setMethods((current) => current.map((item) => (item.code === updated.code ? updated : item)))
+      setToast({ message: `${updated.label} ${updated.isActive ? 'diaktifkan' : 'dinonaktifkan'}.`, tone: 'success' })
+    } catch (error) {
+      setToast({ message: getErrorMessage(error, `Gagal mengubah status ${method.label}.`), tone: 'error' })
+    } finally {
+      setTogglingCode('')
+    }
   }
 
   async function handleQrisImageChange(file?: File | null) {
@@ -317,113 +360,125 @@ export default function PaymentMethodManagementScreen() {
     }
   }
 
-  const virtualAccountMethods = methods.filter((method) => method.category === 'VIRTUAL_ACCOUNT')
-  const primaryVirtualAccountMethod = virtualAccountMethods[0]
-  const tableRows = [
-    ...methods.flatMap((method) => {
-      if (method.category === 'VIRTUAL_ACCOUNT') return []
-
-      if (method.code !== 'bank_transfer') {
-        return [{
-          id: method.code,
-          mobileTitle: method.label,
-          mobileSubtitle: method.code,
-          mobileAside: <MethodStatusBadge method={method} />,
-          mobileMeta: method.isLocked ? (
-            <span className="text-sm text-navy-500">Metode ini masih coming soon.</span>
-          ) : (
+  const manualTableRows = methods.filter((method) => MANUAL_METHOD_CODES.includes(method.code)).flatMap((method) => {
+    if (method.code !== 'bank_transfer') {
+      return [{
+        id: method.code,
+        mobileTitle: method.label,
+        mobileSubtitle: method.code,
+        mobileAside: <MethodStatusBadge method={method} />,
+        mobileMeta: (
+          <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+        ),
+        cells: [
+          <div key={`${method.code}-name`}>
+            <p className="font-semibold text-navy-900">{method.label}</p>
+            <p className="mt-0.5 text-xs font-medium text-navy-500">{method.code}</p>
+          </div>,
+          <MethodStatusBadge key={`${method.code}-status`} method={method} />,
+          <div key={`${method.code}-edit`} className="flex justify-end">
             <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
               <Pencil className="h-4 w-4" />
               Edit
             </Button>
-          ),
-          cells: [
-            <div key={`${method.code}-name`}>
-              <p className="font-semibold text-navy-900">{method.label}</p>
-              <p className="mt-0.5 text-xs font-medium text-navy-500">{method.code}</p>
-            </div>,
-            <MethodStatusBadge key={`${method.code}-status`} method={method} />,
-            <div key={`${method.code}-edit`} className="flex justify-end">
-              {method.isLocked ? (
-                <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-navy-100 px-3 text-xs font-semibold text-navy-400">
-                  <Lock className="h-4 w-4" />
-                  Locked
-                </span>
+          </div>,
+        ],
+      }]
+    }
+
+    const accounts = buildForm(method).bankAccounts
+    return accounts.map((account) => {
+      const bankLogo = getBankLogo(account.bankName)
+      const accountIsActive = method.isActive && Boolean(account.isActive) && isCompleteBankAccount(account)
+
+      return {
+        id: `${method.code}:${account.id}`,
+        mobileTitle: getBankAccountLabel(account),
+        mobileSubtitle: getBankAccountSubtitle(account),
+        mobileAside: <MethodStatusBadge method={method} activeOverride={accountIsActive} />,
+        mobileMeta: (
+          <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method, account.id)}>
+            <Pencil className="h-4 w-4" />
+            Edit
+          </Button>
+        ),
+        cells: [
+          <div key={`${method.code}-${account.id}-name`} className="flex items-center gap-3">
+            <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-navy-50 p-2">
+              {bankLogo ? (
+                <Image src={bankLogo} alt={account.bankName || getBankAccountLabel(account)} className="h-full w-full object-contain" />
               ) : (
-                <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method)}>
-                  <Pencil className="h-4 w-4" />
-                  Edit
-                </Button>
+                <span className="text-xs font-bold text-navy-400">BANK</span>
               )}
-            </div>,
-          ],
-        }]
-      }
-
-      const accounts = buildForm(method).bankAccounts
-      return accounts.map((account) => {
-        const bankLogo = getBankLogo(account.bankName)
-        const accountIsActive = method.isActive && Boolean(account.isActive) && isCompleteBankAccount(account)
-
-        return {
-          id: `${method.code}:${account.id}`,
-          mobileTitle: getBankAccountLabel(account),
-          mobileSubtitle: getBankAccountSubtitle(account),
-          mobileAside: <MethodStatusBadge method={method} activeOverride={accountIsActive} />,
-          mobileMeta: (
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-navy-900">{getBankAccountLabel(account)}</p>
+              <p className="mt-0.5 truncate text-xs font-medium text-navy-500">{getBankAccountSubtitle(account)}</p>
+            </div>
+          </div>,
+          <MethodStatusBadge key={`${method.code}-${account.id}-status`} method={method} activeOverride={accountIsActive} />,
+          <div key={`${method.code}-${account.id}-edit`} className="flex justify-end">
             <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method, account.id)}>
               <Pencil className="h-4 w-4" />
               Edit
             </Button>
-          ),
-          cells: [
-            <div key={`${method.code}-${account.id}-name`} className="flex items-center gap-3">
-              <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-navy-50 p-2">
-                {bankLogo ? (
-                  <Image src={bankLogo} alt={account.bankName || getBankAccountLabel(account)} className="h-full w-full object-contain" />
-                ) : (
-                  <span className="text-xs font-bold text-navy-400">BANK</span>
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-navy-900">{getBankAccountLabel(account)}</p>
-                <p className="mt-0.5 truncate text-xs font-medium text-navy-500">{getBankAccountSubtitle(account)}</p>
-              </div>
-            </div>,
-            <MethodStatusBadge key={`${method.code}-${account.id}-status`} method={method} activeOverride={accountIsActive} />,
-            <div key={`${method.code}-${account.id}-edit`} className="flex justify-end">
-              <Button type="button" size="sm" variant="secondary" onClick={() => openEditModal(method, account.id)}>
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Button>
-            </div>,
-          ],
-        }
-      })
-    }),
-    ...(primaryVirtualAccountMethod ? [{
-      id: 'virtual_account',
-      mobileTitle: 'Virtual Account',
-      mobileSubtitle: virtualAccountMethods.map((method) => method.label.replace(/\s*Virtual Account$/i, '')).join(', '),
-      mobileAside: <MethodStatusBadge method={primaryVirtualAccountMethod} />,
-      mobileMeta: <span className="text-sm text-navy-500">Metode ini masih coming soon.</span>,
+          </div>,
+        ],
+      }
+    })
+  })
+
+  const midtransMethods = MIDTRANS_METHOD_CODES
+    .map((code) => methods.find((method) => method.code === code))
+    .filter((method): method is PaymentMethodRecord => Boolean(method))
+  const midtransTableRows = midtransMethods.map((method) => {
+    const logo = getPaymentLogo(method.label)
+
+    return {
+      id: method.code,
+      mobileTitle: method.label,
+      mobileSubtitle: method.category === 'QRIS' ? 'Midtrans QRIS' : undefined,
+      mobileAside: <MethodStatusBadge method={method} />,
+      mobileMeta: (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-navy-600">Aktifkan</span>
+          <Toggle
+            checked={method.isActive}
+            disabled={togglingCode === method.code}
+            onChange={(checked) => handleToggleMidtransMethod(method, checked)}
+          />
+        </div>
+      ),
       cells: [
-        <div key="virtual-account-name">
-          <p className="font-semibold text-navy-900">Virtual Account</p>
-          <p className="mt-0.5 text-xs font-medium text-navy-500">
-            {virtualAccountMethods.map((method) => method.label.replace(/\s*Virtual Account$/i, '')).join(', ')}
-          </p>
+        <div key={`${method.code}-name`} className="flex items-center gap-3">
+          <div className="flex h-10 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-white p-2">
+            {logo ? (
+              <Image src={logo} alt={method.label} className="h-full w-full object-contain" />
+            ) : (
+              <span className="text-xs font-bold text-navy-400">{method.label}</span>
+            )}
+          </div>
+          <div>
+            <p className="font-semibold text-navy-900">{method.label}</p>
+            {method.category === 'QRIS' ? (
+              <p className="mt-0.5 text-xs font-medium text-navy-500">Midtrans QRIS</p>
+            ) : null}
+          </div>
         </div>,
-        <MethodStatusBadge key="virtual-account-status" method={primaryVirtualAccountMethod} />,
-        <div key="virtual-account-edit" className="flex justify-end">
-          <span className="inline-flex h-9 items-center gap-2 rounded-lg border border-navy-100 px-3 text-xs font-semibold text-navy-400">
-            <Lock className="h-4 w-4" />
-            Locked
-          </span>
+        <MethodStatusBadge key={`${method.code}-status`} method={method} />,
+        <div key={`${method.code}-toggle`} className="flex justify-end">
+          <Toggle
+            checked={method.isActive}
+            disabled={togglingCode === method.code}
+            onChange={(checked) => handleToggleMidtransMethod(method, checked)}
+          />
         </div>,
       ],
-    }] : []),
-  ]
+    }
+  })
 
   const qrisImageUrl = resolvePublicAssetUrl(form.imageUrl)
   const visibleBankAccounts = selectedMethod?.code === 'bank_transfer' && selectedBankAccountId
@@ -439,6 +494,28 @@ export default function PaymentMethodManagementScreen() {
 
       <InlineToast toast={toast} />
 
+      <Card padding="sm" className="max-w-md">
+        <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-navy-600 bg-white p-0.5">
+          {(['manual', 'midtrans'] as const).map((mode) => {
+            const isActive = paymentMode === mode
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  if (mode !== paymentMode) setPendingPaymentMode(mode)
+                }}
+                className={`h-11 rounded-md text-sm font-bold transition-colors ${
+                  isActive ? 'bg-navy-900 text-white' : 'text-navy-800 hover:bg-navy-50'
+                }`}
+              >
+                {mode === 'manual' ? 'Manual' : 'Midtrans'}
+              </button>
+            )
+          })}
+        </div>
+      </Card>
+
       {isLoading ? (
         <Card padding="md">
           <p className="text-sm font-medium text-navy-600">Memuat pengaturan pembayaran...</p>
@@ -450,11 +527,44 @@ export default function PaymentMethodManagementScreen() {
           columns={[
             { id: 'name', label: 'Nama', className: 'w-[55%]' },
             { id: 'status', label: 'Status', className: 'w-[25%]' },
-            { id: 'edit', label: <span className="sr-only">Edit</span>, className: 'w-[20%] text-right' },
+            { id: 'edit', label: <span className="sr-only">{paymentMode === 'manual' ? 'Edit' : 'Aktifkan'}</span>, className: 'w-[20%] text-right' },
           ]}
-          rows={tableRows}
+          rows={paymentMode === 'manual' ? manualTableRows : midtransTableRows}
+          emptyState={
+            <AdminEmptyState
+              title={paymentMode === 'manual' ? 'Belum ada metode manual' : 'Belum ada metode Midtrans'}
+              description={paymentMode === 'manual'
+                ? 'Metode QRIS Manual dan Transfer Bank belum tersedia.'
+                : 'Jalankan migrasi terbaru untuk mengisi metode Midtrans.'}
+            />
+          }
         />
       )}
+
+      <Modal
+        isOpen={Boolean(pendingPaymentMode)}
+        onClose={() => {
+          if (!isSavingMode) setPendingPaymentMode(null)
+        }}
+        title="Ubah Mode Pembayaran"
+        size="sm"
+      >
+        <div className="space-y-5">
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold">Yakin ingin mengubah mode pembayaran?</p>
+              <p className="mt-1 text-sm">
+                Mode aktif akan berubah ke {pendingPaymentMode === 'manual' ? 'Manual' : 'Midtrans'} di halaman admin pembayaran.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setPendingPaymentMode(null)} disabled={isSavingMode}>Batal</Button>
+            <Button onClick={confirmPaymentModeChange} isLoading={isSavingMode}>Ya, Ubah</Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={Boolean(selectedMethod)}

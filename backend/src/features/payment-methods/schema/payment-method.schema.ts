@@ -5,4 +5,9 @@ export const updatePaymentMethodSchema = z.object({
   config: z.record(z.unknown()).optional(),
 });
 
+export const updatePaymentGatewayModeSchema = z.object({
+  mode: z.enum(['manual', 'midtrans']),
+});
+
 export type UpdatePaymentMethodInput = z.infer<typeof updatePaymentMethodSchema>;
+export type UpdatePaymentGatewayModeInput = z.infer<typeof updatePaymentGatewayModeSchema>;

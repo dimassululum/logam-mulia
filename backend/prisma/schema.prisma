@@ -202,6 +202,7 @@ model Order {
   customerName          String?          @map("customer_name")
   customerEmail         String?          @map("customer_email")
   customerPhone         String?          @map("customer_phone")
+  checkoutRequestId     String?          @unique @map("checkout_request_id")
   status                OrderStatus      @default(PENDING)
   totalAmount           Decimal          @map("total_amount") @db.Decimal(15, 2)
   shippingCost          Decimal          @map("shipping_cost") @db.Decimal(15, 2)
@@ -230,6 +231,11 @@ model Order {
   voucherId             String?          @map("voucher_id")
   voucher               Voucher?         @relation(fields: [voucherId], references: [id])
   midtransTransactionId String?          @map("midtrans_transaction_id")
+  midtransPaymentType   String?          @map("midtrans_payment_type")
+  midtransTransactionStatus String?       @map("midtrans_transaction_status")
+  midtransFraudStatus   String?          @map("midtrans_fraud_status")
+  midtransExpiryTime    DateTime?        @map("midtrans_expiry_time")
+  midtransRawResponse   Json?            @map("midtrans_raw_response")
   snapToken             String?          @map("snap_token")
   items                 OrderItem[]
   statusLogs            OrderStatusLog[]

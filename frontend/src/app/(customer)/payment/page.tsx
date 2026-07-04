@@ -9,6 +9,7 @@ import { formatRupiah } from '@/core/lib/utils'
 import { getBankLogo } from '@/features/payment-methods/bank-assets'
 import AppBar from '@/shared/ui/AppBar'
 import Button from '@/shared/ui/Button'
+import CopyButton from '@/shared/ui/CopyButton'
 import { readCurrentOrder, uploadCurrentOrderPaymentProof } from '@/features/orders/order-api'
 
 const MAX_PAYMENT_PROOF_MB = 10
@@ -76,6 +77,10 @@ export default function PaymentPage() {
             {formatRupiah(order?.grandTotalAmount ?? 0)}
           </div>
           <p className="text-sm font-semibold text-navy-600">Order ID: {order?.id ?? '-'}</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <CopyButton value={order?.id} label="Salin Order ID" />
+            <CopyButton value={order?.grandTotalAmount ? formatRupiah(order.grandTotalAmount) : ''} label="Salin Total" />
+          </div>
           <div className="mt-4 flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full text-amber-700 border border-amber-100">
             <Clock className="w-5 h-5" />
             <span className="text-sm font-medium">Upload bukti setelah pembayaran berhasil.</span>
@@ -102,15 +107,24 @@ export default function PaymentPage() {
               <div className="grid gap-3">
                 <div className="rounded-lg bg-white p-4 ring-1 ring-navy-100">
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">Bank</p>
-                  <p className="mt-1 text-lg font-bold text-navy-900">{paymentConfig.bankName || '-'}</p>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-lg font-bold text-navy-900">{paymentConfig.bankName || '-'}</p>
+                    <CopyButton value={paymentConfig.bankName} />
+                  </div>
                 </div>
                 <div className="rounded-lg bg-white p-4 ring-1 ring-navy-100">
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">Nomor Rekening</p>
-                  <p className="mt-1 font-heading text-2xl font-bold text-gold-600">{paymentConfig.accountNumber || '-'}</p>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-heading text-2xl font-bold text-gold-600">{paymentConfig.accountNumber || '-'}</p>
+                    <CopyButton value={paymentConfig.accountNumber} />
+                  </div>
                 </div>
                 <div className="rounded-lg bg-white p-4 ring-1 ring-navy-100">
                   <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">Nama Pemilik</p>
-                  <p className="mt-1 text-lg font-bold text-navy-900">{paymentConfig.accountHolder || '-'}</p>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-lg font-bold text-navy-900">{paymentConfig.accountHolder || '-'}</p>
+                    <CopyButton value={paymentConfig.accountHolder} />
+                  </div>
                 </div>
               </div>
             </div>

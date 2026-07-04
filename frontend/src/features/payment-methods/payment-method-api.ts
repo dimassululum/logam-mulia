@@ -5,6 +5,7 @@ const API_URL = resolvePublicApiBaseUrl()
 
 export type PaymentMethodCategory = 'QRIS' | 'BANK_TRANSFER' | 'VIRTUAL_ACCOUNT'
 export type PaymentMethodStatus = 'READY' | 'COMING_SOON'
+export type PaymentGatewayMode = 'manual' | 'midtrans'
 
 export interface PaymentMethodConfig {
   imageUrl?: string
@@ -40,6 +41,11 @@ export interface PaymentMethodRecord {
   updatedAt: string
 }
 
+export interface CheckoutPaymentMethods {
+  mode: PaymentGatewayMode
+  methods: PaymentMethodRecord[]
+}
+
 export async function fetchPublicPaymentMethods() {
   const response = await fetch(`${API_URL}/payment-methods/public`, { cache: 'no-store' })
   const json = await response.json()
@@ -47,9 +53,26 @@ export async function fetchPublicPaymentMethods() {
   return json.data as PaymentMethodRecord[]
 }
 
+export async function fetchCheckoutPaymentMethods() {
+  const response = await fetch(`${API_URL}/payment-methods/checkout`, { cache: 'no-store' })
+  const json = await response.json()
+  if (!response.ok) throw new Error(json.message || 'Gagal memuat metode pembayaran')
+  return json.data as CheckoutPaymentMethods
+}
+
 export async function fetchAdminPaymentMethods() {
   const response = await apiClient.get<{ data: PaymentMethodRecord[] }>('/payment-methods')
   return response.data.data
+}
+
+export async function fetchAdminPaymentGatewayMode() {
+  const response = await apiClient.get<{ data: { mode: PaymentGatewayMode } }>('/payment-methods/mode')
+  return response.data.data.mode
+}
+
+export async function updateAdminPaymentGatewayMode(mode: PaymentGatewayMode) {
+  const response = await apiClient.put<{ data: { mode: PaymentGatewayMode } }>('/payment-methods/mode', { mode })
+  return response.data.data.mode
 }
 
 export async function updateAdminPaymentMethod(

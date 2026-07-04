@@ -10,6 +10,7 @@ const orderItemSchema = z.object({
 });
 
 export const createOrderSchema = z.object({
+  checkoutRequestId: z.string().uuid().optional(),
   email: z.string().email(),
   customerName: z.string().min(2),
   customerPhone: z.string().optional(),
