@@ -8,6 +8,7 @@ import { resolveActivePaymentMethodForOrder } from '../../payment-methods/servic
 import {
   chargeMidtransPayment,
   extractMidtransMethodCode,
+  getMidtransTransactionStatus,
   parseMidtransPayment,
   verifyMidtransSignature,
   type MidtransNotificationPayload,
@@ -735,10 +736,73 @@ export async function getAllOrders(input: GetAllOrdersInput) {
   };
 }
 
+async function applyMidtransStatusToOrder(existing: OrderWithDetails, payload: MidtransNotificationPayload) {
+  const parsedPayment = parseMidtransPayment(payload as Record<string, unknown>);
+  const nextStatus = getOrderStatusFromMidtrans(payload.transaction_status, payload.fraud_status);
+  const statusChanged = Boolean(nextStatus && existing.status !== nextStatus);
+
+  const order = await prisma.order.update({
+    where: { id: existing.id },
+    data: {
+      ...(nextStatus ? { status: nextStatus } : {}),
+      midtransTransactionId: parsedPayment.transactionId ?? existing.midtransTransactionId,
+      midtransPaymentType: parsedPayment.paymentType ?? existing.midtransPaymentType,
+      midtransTransactionStatus: parsedPayment.transactionStatus ?? existing.midtransTransactionStatus,
+      midtransFraudStatus: parsedPayment.fraudStatus ?? existing.midtransFraudStatus,
+      midtransExpiryTime: parsedPayment.expiryTime ?? existing.midtransExpiryTime,
+      midtransRawResponse: parsedPayment.rawResponse,
+      paymentMethodConfig: buildMidtransPaymentConfig(existing.paymentMethodConfig, parsedPayment),
+      ...(nextStatus === OrderStatus.CANCELLED && {
+        cancelledAt: existing.cancelledAt ?? new Date(),
+        cancelReason: existing.cancelReason ?? `Midtrans ${payload.transaction_status || 'cancelled'}.`,
+      }),
+      ...(statusChanged && {
+        statusLogs: {
+          create: {
+            status: nextStatus!,
+            note: `Status Midtrans berubah menjadi ${payload.transaction_status || '-'}.`,
+          },
+        },
+      }),
+    },
+    include: orderInclude,
+  });
+
+  if (statusChanged && nextStatus === OrderStatus.PAID) {
+    queuePaymentConfirmedNotification(order);
+  }
+
+  return order;
+}
+
+async function syncMidtransOrderStatusIfNeeded(order: OrderWithDetails) {
+  if (
+    !order.paymentMethodCode
+    || !isMidtransMethodCode(order.paymentMethodCode)
+    || !order.midtransTransactionId
+    || (order.status !== OrderStatus.UNPAID && order.status !== OrderStatus.PENDING)
+  ) {
+    return order;
+  }
+
+  try {
+    const payload = await getMidtransTransactionStatus(order.id);
+    verifyMidtransSignature(payload);
+    return await applyMidtransStatusToOrder(order, payload);
+  } catch (error) {
+    logger.warn('Gagal sinkron status Midtrans saat membuka detail order', {
+      orderId: order.id,
+      error: error instanceof Error ? error.message : error,
+    });
+    return order;
+  }
+}
+
 export async function getOrderById(id: string) {
   const order = await prisma.order.findUnique({ where: { id }, include: orderInclude });
   if (!order) throw new NotFoundError('Pesanan');
-  return mapOrder(order);
+  const syncedOrder = await syncMidtransOrderStatusIfNeeded(order);
+  return mapOrder(syncedOrder);
 }
 
 export async function getOrdersByUserId(userId: string) {
@@ -754,7 +818,8 @@ export async function getOrdersByUserId(userId: string) {
 export async function getOrderByIdForUser(id: string, userId: string) {
   const order = await prisma.order.findFirst({ where: { id, userId }, include: orderInclude });
   if (!order) throw new NotFoundError('Pesanan');
-  return mapOrder(order);
+  const syncedOrder = await syncMidtransOrderStatusIfNeeded(order);
+  return mapOrder(syncedOrder);
 }
 
 export async function createOrder(input: CreateOrderInput) {
@@ -1068,40 +1133,6 @@ export async function handleMidtransNotification(payload: MidtransNotificationPa
     };
   }
 
-  const parsedPayment = parseMidtransPayment(payload as Record<string, unknown>);
-  const nextStatus = getOrderStatusFromMidtrans(payload.transaction_status, payload.fraud_status);
-  const statusChanged = Boolean(nextStatus && existing.status !== nextStatus);
-
-  const order = await prisma.order.update({
-    where: { id: existing.id },
-    data: {
-      ...(nextStatus ? { status: nextStatus } : {}),
-      midtransTransactionId: parsedPayment.transactionId ?? existing.midtransTransactionId,
-      midtransPaymentType: parsedPayment.paymentType ?? existing.midtransPaymentType,
-      midtransTransactionStatus: parsedPayment.transactionStatus ?? existing.midtransTransactionStatus,
-      midtransFraudStatus: parsedPayment.fraudStatus ?? existing.midtransFraudStatus,
-      midtransExpiryTime: parsedPayment.expiryTime ?? existing.midtransExpiryTime,
-      midtransRawResponse: parsedPayment.rawResponse,
-      paymentMethodConfig: buildMidtransPaymentConfig(existing.paymentMethodConfig, parsedPayment),
-      ...(nextStatus === OrderStatus.CANCELLED && {
-        cancelledAt: existing.cancelledAt ?? new Date(),
-        cancelReason: existing.cancelReason ?? `Midtrans ${payload.transaction_status || 'cancelled'}.`,
-      }),
-      ...(statusChanged && {
-        statusLogs: {
-          create: {
-            status: nextStatus!,
-            note: `Status Midtrans berubah menjadi ${payload.transaction_status || '-'}.`,
-          },
-        },
-      }),
-    },
-    include: orderInclude,
-  });
-
-  if (statusChanged && nextStatus === OrderStatus.PAID) {
-    queuePaymentConfirmedNotification(order);
-  }
-
+  const order = await applyMidtransStatusToOrder(existing, payload);
   return mapOrder(order);
 }

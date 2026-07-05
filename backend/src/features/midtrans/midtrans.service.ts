@@ -181,6 +181,22 @@ export async function chargeMidtransPayment(input: ChargeMidtransInput) {
   return parseMidtransPayment(json);
 }
 
+export async function getMidtransTransactionStatus(orderId: string): Promise<MidtransNotificationPayload> {
+  const response = await fetch(`${CORE_API_BASE_URL}/v2/${encodeURIComponent(orderId)}/status`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: getAuthHeader(),
+    },
+  });
+  const json = await response.json() as MidtransNotificationPayload & { status_message?: string };
+
+  if (!response.ok) {
+    throw new BadRequestError(json.status_message || 'Gagal mengambil status transaksi Midtrans.');
+  }
+
+  return json;
+}
+
 export function verifyMidtransSignature(payload: MidtransNotificationPayload) {
   ensureServerKey();
   const signatureSource = `${payload.order_id ?? ''}${payload.status_code ?? ''}${payload.gross_amount ?? ''}${env.MIDTRANS_SERVER_KEY}`;
