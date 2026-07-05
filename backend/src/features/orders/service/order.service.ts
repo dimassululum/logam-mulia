@@ -1058,7 +1058,15 @@ export async function handleMidtransNotification(payload: MidtransNotificationPa
   }
 
   const existing = await prisma.order.findUnique({ where: { id: payload.order_id }, include: orderInclude });
-  if (!existing) throw new NotFoundError('Pesanan');
+  if (!existing) {
+    logger.warn(`Notifikasi Midtrans diabaikan karena order tidak ditemukan: ${payload.order_id}`);
+    return {
+      ignored: true,
+      reason: 'order_not_found',
+      orderId: payload.order_id,
+      transactionStatus: payload.transaction_status ?? null,
+    };
+  }
 
   const parsedPayment = parseMidtransPayment(payload as Record<string, unknown>);
   const nextStatus = getOrderStatusFromMidtrans(payload.transaction_status, payload.fraud_status);
