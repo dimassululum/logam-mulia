@@ -34,25 +34,23 @@ function resolveInitialMethod(code?: string | null): MidtransMethodCode {
   return METHOD_PREVIEWS.some((method) => method.code === code) ? (code as MidtransMethodCode) : 'bri_va'
 }
 
-function formatExpiry(value?: string | null) {
-  if (!value) return 'batas waktu Midtrans'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'Asia/Jakarta',
-  }).format(date)
-}
-
 function isPaidStatus(status?: string | null) {
   return ['paid', 'success', 'completed', 'selesai'].includes(String(status || '').toLowerCase())
+}
+
+function formatCountdown(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds)
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 export default function MidtransPaymentPage() {
   const router = useRouter()
   const [order, setOrder] = useState(() => readCurrentOrder())
   const [statusMessage, setStatusMessage] = useState('Menunggu konfirmasi pembayaran dari Midtrans.')
+  const [countdownEndsAt] = useState(() => Date.now() + 10 * 60 * 1000)
+  const [remainingSeconds, setRemainingSeconds] = useState(10 * 60)
   const paymentConfig = order?.paymentMethodConfig ?? {}
   const [selectedCode, setSelectedCode] = useState<MidtransMethodCode>(() => resolveInitialMethod(order?.paymentMethodCode))
   const selectedMethod = useMemo(
@@ -62,7 +60,6 @@ export default function MidtransPaymentPage() {
   const logo = getPaymentLogo(selectedMethod.label)
   const total = order?.grandTotalAmount ?? 12875000
   const orderId = order?.id ?? 'INV-PREVIEW-MIDTRANS'
-  const expiryText = formatExpiry(order?.midtransExpiryTime ?? paymentConfig.expiryTime)
   const isQris = selectedMethod.code === 'qris_midtrans'
   const isRealOrder = Boolean(order?.id && paymentConfig.provider === 'midtrans')
   const accountNumber = isRealOrder
@@ -76,6 +73,17 @@ export default function MidtransPaymentPage() {
     ? paymentConfig.billerCode || selectedMethod.secondaryValue
     : selectedMethod.secondaryValue
   const qrUrl = isRealOrder ? paymentConfig.qrUrl : null
+  const countdownText = formatCountdown(remainingSeconds)
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      setRemainingSeconds(Math.max(0, Math.ceil((countdownEndsAt - Date.now()) / 1000)))
+    }
+
+    updateCountdown()
+    const countdownId = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(countdownId)
+  }, [countdownEndsAt])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -133,13 +141,9 @@ export default function MidtransPaymentPage() {
             {formatRupiah(total)}
           </div>
           <p className="text-sm font-semibold text-navy-600">Order ID: {orderId}</p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <CopyButton value={orderId} label="Salin Order ID" />
-            <CopyButton value={formatRupiah(total)} label="Salin Total" />
-          </div>
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-100 bg-amber-50 px-4 py-2 text-amber-700">
             <Clock className="h-5 w-5" />
-            <span className="text-sm font-medium">Selesaikan sebelum {expiryText}</span>
+            <span className="text-sm font-medium">Selesaikan dalam {countdownText}</span>
           </div>
         </section>
 
@@ -160,20 +164,21 @@ export default function MidtransPaymentPage() {
                 <p className="text-sm text-navy-500">{isQris ? 'Scan QRIS untuk menyelesaikan pembayaran.' : 'Gunakan kode pembayaran berikut.'}</p>
               </div>
             </div>
-            <select
-              className="input-base h-10 w-full bg-white text-sm sm:w-44"
-              value={selectedCode}
-              disabled={isRealOrder}
-              onChange={(event) => setSelectedCode(event.target.value as MidtransMethodCode)}
-            >
-              {METHOD_PREVIEWS.map((method) => (
-                <option key={method.code} value={method.code}>{method.label}</option>
-              ))}
-            </select>
+            {!isRealOrder ? (
+              <select
+                className="input-base h-10 w-full bg-white text-sm sm:w-44"
+                value={selectedCode}
+                onChange={(event) => setSelectedCode(event.target.value as MidtransMethodCode)}
+              >
+                {METHOD_PREVIEWS.map((method) => (
+                  <option key={method.code} value={method.code}>{method.label}</option>
+                ))}
+              </select>
+            ) : null}
           </div>
 
           {isQris ? (
-            <div className="rounded-xl border border-navy-200 bg-navy-50 p-4">
+            <div className="space-y-4">
               <div className="mx-auto flex aspect-square w-full max-w-[320px] flex-col items-center justify-center rounded-lg border border-navy-100 bg-white p-6 text-center">
                 {qrUrl ? (
                   <Image src={qrUrl} alt="QRIS Midtrans" width={320} height={320} unoptimized className="h-full w-full object-contain" />
@@ -185,32 +190,30 @@ export default function MidtransPaymentPage() {
                   </>
                 )}
               </div>
-              <div className="mt-4 rounded-lg bg-white p-4 ring-1 ring-navy-100">
+              <div className="rounded-lg border border-navy-200 bg-white p-4">
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.accountLabel}</p>
                 <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-                  <p className="break-all font-mono text-sm font-bold text-navy-900">{accountNumber}</p>
+                  <p className="break-all font-mono text-base font-bold leading-relaxed text-navy-900">{accountNumber}</p>
                   <CopyButton value={accountNumber} />
                 </div>
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-navy-200 bg-navy-50 p-4">
-              <div className="grid gap-3">
-                {selectedMethod.secondaryLabel && secondaryValue ? (
-                  <div className="rounded-lg bg-white p-4 ring-1 ring-navy-100">
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.secondaryLabel}</p>
-                    <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-                      <p className="font-heading text-2xl font-bold text-navy-900">{secondaryValue}</p>
-                      <CopyButton value={secondaryValue} />
-                    </div>
-                  </div>
-                ) : null}
-                <div className="rounded-lg bg-white p-4 ring-1 ring-navy-100">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.accountLabel}</p>
+            <div className="grid gap-3">
+              {selectedMethod.secondaryLabel && secondaryValue ? (
+                <div className="rounded-lg border border-navy-200 bg-white p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.secondaryLabel}</p>
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-                    <p className="font-heading text-2xl font-bold text-gold-600">{accountNumber}</p>
-                    <CopyButton value={accountNumber} />
+                    <p className="font-mono text-2xl font-bold tracking-wide text-navy-900">{secondaryValue}</p>
+                    <CopyButton value={secondaryValue} />
                   </div>
+                </div>
+              ) : null}
+              <div className="rounded-lg border border-navy-200 bg-white p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.accountLabel}</p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="break-all font-mono text-3xl font-bold leading-tight tracking-wide text-navy-900 sm:text-4xl">{accountNumber}</p>
+                  <CopyButton value={accountNumber} />
                 </div>
               </div>
             </div>

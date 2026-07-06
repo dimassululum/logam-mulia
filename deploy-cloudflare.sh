@@ -9,6 +9,20 @@
 
 set -e
 
+if [ "${ALLOW_LEGACY_CLOUDFLARE_DEPLOY:-}" != "1" ]; then
+    echo "This legacy deploy script is intentionally disabled."
+    echo ""
+    echo "Production now uses:"
+    echo "  docker compose -p logam-mulia --env-file .env.production -f docker-compose.stack.yml -f docker-compose.prod.yml up -d"
+    echo ""
+    echo "Recommended command:"
+    echo "  ./scripts/deploy-prod.ps1"
+    echo ""
+    echo "If you really need the old docker-compose.cloudflare.yml flow, rerun with:"
+    echo "  ALLOW_LEGACY_CLOUDFLARE_DEPLOY=1 ./deploy-cloudflare.sh"
+    exit 1
+fi
+
 echo "🚀 Deploying Logam Mulia Antam with Cloudflare Tunnel..."
 echo ""
 

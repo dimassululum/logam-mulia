@@ -77,10 +77,6 @@ export default function PaymentPage() {
             {formatRupiah(order?.grandTotalAmount ?? 0)}
           </div>
           <p className="text-sm font-semibold text-navy-600">Order ID: {order?.id ?? '-'}</p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <CopyButton value={order?.id} label="Salin Order ID" />
-            <CopyButton value={order?.grandTotalAmount ? formatRupiah(order.grandTotalAmount) : ''} label="Salin Total" />
-          </div>
           <div className="mt-4 flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-full text-amber-700 border border-amber-100">
             <Clock className="w-5 h-5" />
             <span className="text-sm font-medium">Upload bukti setelah pembayaran berhasil.</span>

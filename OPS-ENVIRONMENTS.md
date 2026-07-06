@@ -6,7 +6,7 @@ Project ini punya tiga jalur aman:
 - Staging: rehearsal sebelum production, domain `staging.logam-mulia-antam.com`.
 - Production: domain live `logam-mulia-antam.com`.
 
-File lama seperti `docker-compose.cloudflare.yml` tetap dibiarkan supaya deployment yang sedang live tidak berubah mendadak.
+File lama seperti `docker-compose.cloudflare.yml` tetap dibiarkan untuk arsip, tetapi **jangan dipakai untuk deploy production**. Script `deploy-cloudflare.sh` sudah diberi guard legacy supaya tidak sengaja menjalankan stack lama.
 
 ## Compose Files
 
@@ -84,6 +84,59 @@ Production:
 
 Production script meminta konfirmasi `DEPLOY-PROD` sebelum lanjut.
 
+Manual equivalent jika perlu debug di VPS:
+
+```bash
+docker compose -p logam-mulia --env-file .env.production -f docker-compose.stack.yml -f docker-compose.prod.yml build
+docker compose -p logam-mulia --env-file .env.production -f docker-compose.stack.yml -f docker-compose.prod.yml run --rm backend npx prisma migrate deploy
+docker compose -p logam-mulia --env-file .env.production -f docker-compose.stack.yml -f docker-compose.prod.yml up -d
+```
+
+Jangan campur dengan `docker-compose.yml`, `docker-compose.cloudflare.yml`, atau `deploy.sh` di production live.
+
+## Production Sanity Checks
+
+Setelah deploy production, cek satu stack yang aktif:
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep logam
+docker inspect -f '{{.Name}} started={{.State.StartedAt}} image={{.Image}}' logam-mulia-frontend logam-mulia-backend
+```
+
+Frontend dan backend seharusnya sama-sama baru direcreate setelah deploy yang membawa perubahan frontend/backend. Kalau backend baru tetapi frontend masih lama, kemungkinan perubahan UI belum naik.
+
+Cek backend memakai database production internal:
+
+```bash
+docker exec logam-mulia-backend node -e 'const u=new URL(process.env.DATABASE_URL); console.log({host:u.hostname, port:u.port, database:u.pathname.slice(1), search:u.search})'
+```
+
+Nilai yang benar untuk production live saat ini:
+
+```text
+host: db
+port: 5432
+database: antam_db
+search: ?schema=public
+```
+
+Cek Cloudflare tunnel route:
+
+```bash
+sed -n '1,120p' /opt/logam-mulia/cloudflared/config.prod.yml
+```
+
+Route yang benar: `/api` dan `/uploads` ke `http://backend:5000`, sisanya ke `http://frontend:3000`.
+
+Cek data order dari DB dan API publik harus konsisten:
+
+```bash
+docker exec logam-mulia-db psql -U postgres -d antam_db -c "select count(*) from orders;"
+curl -s https://logam-mulia-antam.com/api/health
+```
+
+Untuk endpoint admin `/api/orders`, gunakan token admin browser atau token sementara dari backend hanya untuk debugging, lalu pastikan `meta.total` sama dengan hitungan DB.
+
 ## Promotion Flow
 
 1. Develop di local.
@@ -98,7 +151,8 @@ Production script meminta konfirmasi `DEPLOY-PROD` sebelum lanjut.
    - admin order/product flows
 5. Backup production database.
 6. Deploy production.
-7. Cek `/health`, homepage, dan logs.
+7. Jalankan production sanity checks.
+8. Cek `/health`, homepage, admin orders, dan logs.
 
 ## Rollback Notes
 
