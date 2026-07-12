@@ -1,5 +1,6 @@
 import { prisma } from '../../../core/config/database';
 import { NotFoundError, ConflictError } from '../../../core/utils/errors';
+import { persistDataUrlToUpload } from '../../../core/utils/public-url';
 import type { CreateArticleInput, UpdateArticleInput } from '../schema/article.schema';
 
 interface QueryOptions {
@@ -46,8 +47,9 @@ export async function getArticleBySlug(slugOrId: string) {
 export async function createArticle(authorId: string, data: CreateArticleInput) {
   const existing = await prisma.article.findUnique({ where: { slug: data.slug } });
   if (existing) throw new ConflictError('Artikel dengan slug tersebut sudah ada');
+  const coverUrl = data.coverUrl ? await persistDataUrlToUpload(data.coverUrl, 'article-cover') : data.coverUrl;
   return prisma.article.create({
-    data: { ...data, authorId, publishedAt: data.isPublished ? new Date() : null },
+    data: { ...data, coverUrl, authorId, publishedAt: data.isPublished ? new Date() : null },
     include: { author: { select: { id: true, name: true } } },
   });
 }
@@ -60,9 +62,10 @@ export async function updateArticle(id: string, data: UpdateArticleInput) {
     if (slugExists) throw new ConflictError('Slug sudah digunakan');
   }
   const publishedAt = data.isPublished && !existing.isPublished ? new Date() : existing.publishedAt;
+  const coverUrl = data.coverUrl ? await persistDataUrlToUpload(data.coverUrl, 'article-cover') : data.coverUrl;
   return prisma.article.update({
     where: { id },
-    data: { ...data, publishedAt },
+    data: { ...data, coverUrl, publishedAt },
     include: { author: { select: { id: true, name: true } } },
   });
 }

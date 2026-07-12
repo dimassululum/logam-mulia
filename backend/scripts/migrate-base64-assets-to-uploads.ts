@@ -103,6 +103,34 @@ async function migrateProductImages(execute: boolean) {
   return { scanned, converted };
 }
 
+async function migrateArticleCovers(execute: boolean) {
+  const articles = await prisma.article.findMany({
+    select: { id: true, coverUrl: true },
+    orderBy: { id: 'asc' },
+  });
+
+  let scanned = 0;
+  let converted = 0;
+
+  for (const article of articles) {
+    scanned += 1;
+    if (!article.coverUrl || !parseDataUrl(article.coverUrl)) continue;
+
+    converted += 1;
+    if (!execute) continue;
+
+    const nextUrl = await writeUploadFile(article.coverUrl, 'article-cover');
+    if (nextUrl) {
+      await prisma.article.update({
+        where: { id: article.id },
+        data: { coverUrl: nextUrl },
+      });
+    }
+  }
+
+  return { scanned, converted };
+}
+
 async function migrateDisplayReviewImages(execute: boolean) {
   const setting = await prisma.setting.findUnique({ where: { key: PRODUCT_DISPLAY_META_KEY } });
   if (!setting) return { products: 0, reviews: 0, converted: 0, summaryWritten: false };
@@ -229,10 +257,11 @@ async function main() {
   console.log(`Upload directory: ${UPLOAD_DIR}`);
 
   const productImages = await migrateProductImages(execute);
+  const articleCovers = await migrateArticleCovers(execute);
   const displayReviews = await migrateDisplayReviewImages(execute);
   const companyProfile = await migrateCompanyProfileValues(execute);
 
-  console.log(JSON.stringify({ productImages, displayReviews, companyProfile }, null, 2));
+  console.log(JSON.stringify({ productImages, articleCovers, displayReviews, companyProfile }, null, 2));
 
   if (!execute) {
     console.log('Dry run only. Re-run with --execute to write files and update database rows.');
