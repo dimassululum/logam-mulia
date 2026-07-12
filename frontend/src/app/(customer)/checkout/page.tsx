@@ -1366,7 +1366,14 @@ export default function CheckoutPage() {
           </div>
 
           <div className="w-full sm:w-auto">
-            {checkoutError ? <p className="mb-2 text-sm font-semibold text-red-500">{checkoutError}</p> : null}
+            {checkoutError ? (
+              <div className="mb-3 text-sm">
+                <p className="font-semibold text-red-500">{checkoutError}</p>
+                <a href={waLink} target="_blank" rel="noreferrer" className="mt-1 inline-flex font-semibold text-gold-500 hover:text-gold-600 [transition-duration:var(--transition-fast)] transition-colors">
+                  Hubungi Admin
+                </a>
+              </div>
+            ) : null}
             <Button
               type="button"
               variant="primary"

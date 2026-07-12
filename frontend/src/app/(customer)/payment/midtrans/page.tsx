@@ -62,17 +62,30 @@ export default function MidtransPaymentPage() {
   const orderId = order?.id ?? 'INV-PREVIEW-MIDTRANS'
   const isQris = selectedMethod.code === 'qris_midtrans'
   const isRealOrder = Boolean(order?.id && paymentConfig.provider === 'midtrans')
+  const realAccountNumber = selectedMethod.code === 'mandiri_va'
+    ? paymentConfig.billKey || ''
+    : selectedMethod.code === 'qris_midtrans'
+      ? paymentConfig.qrString || ''
+      : paymentConfig.vaNumber || ''
   const accountNumber = isRealOrder
-    ? selectedMethod.code === 'mandiri_va'
-      ? paymentConfig.billKey || selectedMethod.accountNumber
-      : selectedMethod.code === 'qris_midtrans'
-        ? paymentConfig.qrString || selectedMethod.accountNumber
-        : paymentConfig.vaNumber || selectedMethod.accountNumber
+    ? realAccountNumber
     : selectedMethod.accountNumber
   const secondaryValue = isRealOrder && selectedMethod.code === 'mandiri_va'
-    ? paymentConfig.billerCode || selectedMethod.secondaryValue
+    ? paymentConfig.billerCode || ''
     : selectedMethod.secondaryValue
   const qrUrl = isRealOrder ? paymentConfig.qrUrl : null
+  const hasPaymentCode = selectedMethod.code === 'mandiri_va'
+    ? Boolean(accountNumber && secondaryValue)
+    : selectedMethod.code === 'qris_midtrans'
+      ? Boolean(accountNumber || qrUrl)
+      : Boolean(accountNumber)
+  const isPaymentUnavailable = isRealOrder && !hasPaymentCode
+  const contactAdminMessage = 'Silakan hubungi admin untuk jalur pembayaran yang aman.'
+  const unavailableMessage = selectedMethod.code === 'qris_midtrans'
+    ? `QRIS belum tersedia dari Midtrans. ${contactAdminMessage}`
+    : selectedMethod.code === 'mandiri_va'
+      ? `Kode pembayaran Mandiri belum tersedia dari Midtrans. ${contactAdminMessage}`
+      : `Nomor Virtual Account belum tersedia dari Midtrans. ${contactAdminMessage}`
   const countdownText = formatCountdown(remainingSeconds)
 
   useEffect(() => {
@@ -177,7 +190,14 @@ export default function MidtransPaymentPage() {
             ) : null}
           </div>
 
-          {isQris ? (
+          {isPaymentUnavailable ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-semibold text-red-700">{unavailableMessage}</p>
+              <p className="mt-2 text-sm text-red-600">
+                Jangan lakukan pembayaran ke nomor preview atau nomor yang tidak diterbitkan untuk Order ID ini.
+              </p>
+            </div>
+          ) : isQris ? (
             <div className="space-y-4">
               <div className="mx-auto flex aspect-square w-full max-w-[320px] flex-col items-center justify-center rounded-lg border border-navy-100 bg-white p-6 text-center">
                 {qrUrl ? (
@@ -194,7 +214,7 @@ export default function MidtransPaymentPage() {
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.accountLabel}</p>
                 <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
                   <p className="break-all font-mono text-base font-bold leading-relaxed text-navy-900">{accountNumber}</p>
-                  <CopyButton value={accountNumber} />
+                  {accountNumber ? <CopyButton value={accountNumber} /> : null}
                 </div>
               </div>
             </div>
@@ -213,7 +233,7 @@ export default function MidtransPaymentPage() {
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-navy-500">{selectedMethod.accountLabel}</p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <p className="break-all font-mono text-3xl font-bold leading-tight tracking-wide text-navy-900 sm:text-4xl">{accountNumber}</p>
-                  <CopyButton value={accountNumber} />
+                  {accountNumber ? <CopyButton value={accountNumber} /> : null}
                 </div>
               </div>
             </div>
@@ -244,7 +264,7 @@ export default function MidtransPaymentPage() {
           <Info className="h-6 w-6 flex-shrink-0 text-gold-500" />
           <p className="text-sm leading-relaxed text-navy-600">
             {isRealOrder
-              ? statusMessage
+              ? isPaymentUnavailable ? unavailableMessage : statusMessage
               : 'Halaman ini sedang menampilkan data preview karena belum ada order Midtrans aktif di browser ini.'}
           </p>
         </div>

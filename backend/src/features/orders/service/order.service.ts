@@ -155,6 +155,26 @@ function buildMidtransPaymentConfig(baseConfig: Prisma.JsonValue | null | undefi
   } satisfies Prisma.InputJsonObject;
 }
 
+function getMidtransPaymentReadinessError(methodCode: string, payment: ParsedMidtransPayment) {
+  const transactionStatus = payment.transactionStatus?.toLowerCase();
+  const fraudStatus = payment.fraudStatus?.toLowerCase();
+  const contactAdminMessage = 'Silakan hubungi admin untuk jalur pembayaran yang aman.';
+
+  if (['deny', 'failure', 'cancel', 'expire'].includes(transactionStatus || '') || fraudStatus === 'deny') {
+    return `Transaksi ditolak oleh Midtrans. ${contactAdminMessage}`;
+  }
+
+  if (methodCode === 'mandiri_va') {
+    return payment.billKey && payment.billerCode ? null : `Kode pembayaran Mandiri belum diterbitkan oleh Midtrans. ${contactAdminMessage}`;
+  }
+
+  if (methodCode === 'qris_midtrans') {
+    return payment.qrString || payment.qrUrl ? null : `QRIS belum diterbitkan oleh Midtrans. ${contactAdminMessage}`;
+  }
+
+  return payment.vaNumber ? null : `Nomor Virtual Account belum diterbitkan oleh Midtrans. ${contactAdminMessage}`;
+}
+
 function getOrderStatusFromMidtrans(transactionStatus?: string, fraudStatus?: string) {
   const normalizedTransactionStatus = transactionStatus?.toLowerCase();
   const normalizedFraudStatus = fraudStatus?.toLowerCase();
@@ -952,6 +972,7 @@ export async function createOrder(input: CreateOrderInput) {
           phone: input.customerPhone || user.phone,
         },
       });
+      const paymentReadinessError = getMidtransPaymentReadinessError(midtransMethodCode, payment);
 
       const updatedOrder = await prisma.order.update({
         where: { id: order.id },
@@ -966,24 +987,28 @@ export async function createOrder(input: CreateOrderInput) {
           statusLogs: {
             create: {
               status: OrderStatus.UNPAID,
-              note: `Transaksi Midtrans dibuat untuk metode ${paymentMethod.label}.`,
+              note: paymentReadinessError || `Transaksi Midtrans dibuat untuk metode ${paymentMethod.label}.`,
             },
           },
         },
         include: orderInclude,
       });
 
+      if (paymentReadinessError) {
+        throw new BadRequestError(paymentReadinessError);
+      }
+
       return mapOrder(updatedOrder);
     } catch (error) {
       await prisma.order.update({
         where: { id: order.id },
         data: {
-          status: OrderStatus.CANCELLED,
-          cancelReason: error instanceof Error ? error.message : 'Gagal membuat transaksi Midtrans.',
-          cancelledAt: new Date(),
+          status: OrderStatus.UNPAID,
+          cancelReason: null,
+          cancelledAt: null,
           statusLogs: {
             create: {
-              status: OrderStatus.CANCELLED,
+              status: OrderStatus.UNPAID,
               note: error instanceof Error ? error.message : 'Gagal membuat transaksi Midtrans.',
             },
           },
