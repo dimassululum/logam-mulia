@@ -150,6 +150,78 @@ async function migrateDisplayReviewImages(execute: boolean) {
   };
 }
 
+async function replaceDataUrls(value: unknown, prefix: string, execute: boolean, counter: { scanned: number; converted: number }): Promise<unknown> {
+  if (typeof value === 'string') {
+    counter.scanned += 1;
+    if (!parseDataUrl(value)) return value;
+
+    counter.converted += 1;
+    if (!execute) return value;
+
+    return await writeUploadFile(value, prefix) ?? value;
+  }
+
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((item, index) => replaceDataUrls(item, `${prefix}-${index}`, execute, counter)));
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = await Promise.all(
+      Object.entries(value).map(async ([key, item]) => [key, await replaceDataUrls(item, `${prefix}-${key}`, execute, counter)]),
+    );
+    return Object.fromEntries(entries);
+  }
+
+  return value;
+}
+
+async function migrateCompanyProfileValues(execute: boolean) {
+  const items = await prisma.companyProfile.findMany({
+    where: { value: { contains: 'data:image' } },
+    select: { id: true, key: true, value: true, type: true },
+    orderBy: { key: 'asc' },
+  });
+
+  const result = { rows: items.length, scanned: 0, converted: 0 };
+
+  for (const item of items) {
+    if (parseDataUrl(item.value)) {
+      result.scanned += 1;
+      result.converted += 1;
+
+      if (execute) {
+        const nextValue = await writeUploadFile(item.value, item.key);
+        if (nextValue) {
+          await prisma.companyProfile.update({
+            where: { id: item.id },
+            data: { value: nextValue },
+          });
+        }
+      }
+      continue;
+    }
+
+    try {
+      const counter = { scanned: 0, converted: 0 };
+      const parsed = JSON.parse(item.value);
+      const nextValue = await replaceDataUrls(parsed, item.key, execute, counter);
+      result.scanned += counter.scanned;
+      result.converted += counter.converted;
+
+      if (execute && counter.converted > 0) {
+        await prisma.companyProfile.update({
+          where: { id: item.id },
+          data: { value: JSON.stringify(nextValue) },
+        });
+      }
+    } catch {
+      result.scanned += 1;
+    }
+  }
+
+  return result;
+}
+
 async function main() {
   const execute = isExecuteMode();
 
@@ -158,8 +230,9 @@ async function main() {
 
   const productImages = await migrateProductImages(execute);
   const displayReviews = await migrateDisplayReviewImages(execute);
+  const companyProfile = await migrateCompanyProfileValues(execute);
 
-  console.log(JSON.stringify({ productImages, displayReviews }, null, 2));
+  console.log(JSON.stringify({ productImages, displayReviews, companyProfile }, null, 2));
 
   if (!execute) {
     console.log('Dry run only. Re-run with --execute to write files and update database rows.');
