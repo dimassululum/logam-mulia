@@ -156,13 +156,16 @@ function buildMidtransPaymentConfig(baseConfig: Prisma.JsonValue | null | undefi
 }
 
 function getOrderStatusFromMidtrans(transactionStatus?: string, fraudStatus?: string) {
-  if (transactionStatus === 'capture') {
-    return fraudStatus === 'accept' ? OrderStatus.PAID : OrderStatus.UNPAID;
+  const normalizedTransactionStatus = transactionStatus?.toLowerCase();
+  const normalizedFraudStatus = fraudStatus?.toLowerCase();
+
+  if (normalizedTransactionStatus === 'capture') {
+    return normalizedFraudStatus === 'accept' ? OrderStatus.PAID : OrderStatus.UNPAID;
   }
 
-  if (transactionStatus === 'settlement') return OrderStatus.PAID;
-  if (transactionStatus === 'pending') return OrderStatus.UNPAID;
-  if (['deny', 'cancel', 'expire', 'failure'].includes(transactionStatus || '')) return OrderStatus.CANCELLED;
+  if (normalizedTransactionStatus === 'settlement') return OrderStatus.PAID;
+  if (['pending', 'deny', 'failure'].includes(normalizedTransactionStatus || '')) return OrderStatus.UNPAID;
+  if (['cancel', 'expire'].includes(normalizedTransactionStatus || '')) return OrderStatus.CANCELLED;
   return null;
 }
 
