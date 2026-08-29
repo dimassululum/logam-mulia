@@ -6,7 +6,7 @@ export const updatePaymentMethodSchema = z.object({
 });
 
 export const updatePaymentGatewayModeSchema = z.object({
-  mode: z.enum(['manual', 'midtrans']),
+  mode: z.enum(['manual', 'midtrans', 'duitku']),
 });
 
 export type UpdatePaymentMethodInput = z.infer<typeof updatePaymentMethodSchema>;

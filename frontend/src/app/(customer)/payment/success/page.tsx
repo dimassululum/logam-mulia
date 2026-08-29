@@ -14,13 +14,13 @@ export default function PaymentSuccessPage() {
   const [order, setOrder] = useState(readCurrentOrder())
   const waLink = useCompanyWhatsAppLink('Halo admin, saya ingin bertanya tentang pesanan yang sedang diproses.')
   const normalizedStatus = String(order?.status || '').toLowerCase()
-  const isMidtransOrder = order?.paymentMethodConfig?.provider === 'midtrans'
+  const isGatewayOrder = ['midtrans', 'duitku'].includes(String(order?.paymentMethodConfig?.provider || ''))
   const isPaymentConfirmed = ['paid', 'success', 'completed', 'selesai'].includes(normalizedStatus)
-  const title = isMidtransOrder && isPaymentConfirmed ? 'Pembayaran Berhasil' : 'Menunggu Verifikasi'
-  const description = isMidtransOrder && isPaymentConfirmed
+  const title = isGatewayOrder && isPaymentConfirmed ? 'Pembayaran Berhasil' : 'Menunggu Verifikasi'
+  const description = isGatewayOrder && isPaymentConfirmed
     ? ''
     : 'Terima kasih. Bukti pembayaran Anda sudah kami terima dan akan diverifikasi oleh admin.'
-  const notice = isMidtransOrder && isPaymentConfirmed
+  const notice = isGatewayOrder && isPaymentConfirmed
     ? 'Pesanan akan diproses oleh admin setelah pembayaran berhasil.'
     : 'Pesanan akan diproses setelah pembayaran dikonfirmasi admin.'
 

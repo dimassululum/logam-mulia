@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, CreditCard, HeadphonesIcon, Lock, Mail, MapPin, Plus, QrCode, Search, Store, Truck, UploadCloud, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatRupiah } from '@/core/lib/utils'
 import { apiClient } from '@/core/lib/api-client'
-import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
+import { resolvePublicApiBaseUrl, resolvePublicAssetUrl } from '@/core/lib/public-url'
 import AppBar from '@/shared/ui/AppBar'
 import Button from '@/shared/ui/Button'
 import RadioCard from '@/shared/ui/RadioCard'
@@ -105,18 +105,36 @@ function isCompleteBankAccount(account: BankAccountConfig) {
   return Boolean(account.bankName?.trim() && account.accountNumber?.trim() && account.accountHolder?.trim())
 }
 
-function getMidtransPaymentDescription(method: PaymentMethodRecord) {
-  if (method.category === 'QRIS') return 'Scan QRIS dari Midtrans setelah pembayaran dibuat.'
-  return 'Virtual Account akan dibuat otomatis setelah backend pembayaran Midtrans diaktifkan.'
+function getGatewayPaymentDescription(method: PaymentMethodRecord, mode: PaymentGatewayMode) {
+  if (method.category === 'QRIS') return 'Scan QRIS setelah pembayaran dibuat.'
+  if (method.category === 'RETAIL') return 'Kode pembayaran retail akan dibuat setelah pembayaran dibuat.'
+  return `${getBankDisplayName(method.label)} VA`
+}
+
+function getBankDisplayName(label: string) {
+  const names: Record<string, string> = {
+    BRI: 'Bank Rakyat Indonesia',
+    BNI: 'Bank Negara Indonesia',
+    Mandiri: 'Bank Mandiri',
+    'CIMB Niaga': 'CIMB Niaga',
+    BSI: 'Bank Syariah Indonesia',
+    Danamon: 'Bank Danamon',
+    Permata: 'Bank Permata',
+    Maybank: 'Maybank',
+    Sampoerna: 'Bank Sahabat Sampoerna',
+    'Artha Graha International': 'Bank Artha Graha International',
+    Neo: 'Bank Neo Commerce',
+  }
+  return names[label] || label
 }
 
 function buildPaymentOptions(methods: PaymentMethodRecord[], mode: PaymentGatewayMode): PaymentOption[] {
-  if (mode === 'midtrans') {
+  if (mode !== 'manual') {
     return methods.map((method) => ({
       id: method.code,
       methodCode: method.code,
       label: method.label,
-      description: getMidtransPaymentDescription(method),
+      description: getGatewayPaymentDescription(method, mode),
       category: method.category,
       config: method.config,
       gatewayMode: mode,
@@ -709,7 +727,13 @@ export default function CheckoutPage() {
         voucher: checkoutVoucher,
         discountAmount: discount,
       })
-      router.push(selectedPaymentOption.gatewayMode === 'midtrans' ? '/payment/midtrans' : '/payment')
+      router.push(
+        selectedPaymentOption.gatewayMode === 'midtrans'
+          ? '/payment/midtrans'
+          : selectedPaymentOption.gatewayMode === 'duitku'
+            ? '/payment/duitku'
+            : '/payment'
+      )
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Gagal menyimpan data checkout. Coba lagi sebentar.')
       checkoutRequestIdRef.current = createCheckoutRequestId()
@@ -957,8 +981,9 @@ export default function CheckoutPage() {
               {paymentOptions.map((option) => {
                 const paymentLogo = option.methodCode === 'bank_transfer'
                   ? getPaymentLogo(option.config.bankName)
-                  : getPaymentLogo(option.label)
+                  : getPaymentLogo(option.label) ?? resolvePublicAssetUrl(option.config.imageUrl)
                 const selected = selectedPaymentOptionId === option.id
+                const isGatewayOption = option.gatewayMode !== 'manual'
 
                 return (
                   <RadioCard
@@ -970,12 +995,12 @@ export default function CheckoutPage() {
                       setSelectedPaymentOptionId(option.id)
                     }}
                   >
-                    <div className={`flex gap-3 ${option.gatewayMode === 'midtrans' ? 'items-center' : 'items-start'}`}>
+                    <div className={`flex gap-3 ${isGatewayOption ? 'items-center' : 'items-start'}`}>
                       <div className={`flex h-12 w-16 flex-shrink-0 items-center justify-center rounded-lg border p-2 ${
-                        option.gatewayMode === 'midtrans' ? 'border-navy-200 bg-white' : 'border-gold-200 bg-gold-50 text-gold-700'
+                        isGatewayOption ? 'border-navy-200 bg-white' : 'border-gold-200 bg-gold-50 text-gold-700'
                       }`}>
                         {paymentLogo ? (
-                          <Image src={paymentLogo} alt={option.label} className="h-full w-full object-contain" />
+                          <Image src={paymentLogo} alt={option.label} width={64} height={48} unoptimized className="h-full w-full object-contain" />
                         ) : option.category === 'QRIS' ? (
                           <QrCode className="h-6 w-6" />
                         ) : (
@@ -983,8 +1008,11 @@ export default function CheckoutPage() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        {option.gatewayMode === 'midtrans' ? (
-                          <span className="font-bold text-navy-900">{option.label}</span>
+                        {isGatewayOption ? (
+                          <div>
+                            <span className="font-bold text-navy-900">{option.label}</span>
+                            <p className="mt-1 text-sm text-navy-600">{option.description}</p>
+                          </div>
                         ) : (
                           <>
                             <div className="flex flex-wrap items-center gap-2">
@@ -1385,7 +1413,7 @@ export default function CheckoutPage() {
               className={!canPay ? 'opacity-50 cursor-not-allowed' : ''}
             >
               <Lock className="w-4 h-4" />
-              {selectedPaymentOption?.gatewayMode === 'midtrans' ? 'Lanjutkan Pembayaran' : 'Bayar Sekarang'}
+              {selectedPaymentOption?.gatewayMode !== 'manual' ? 'Lanjutkan Pembayaran' : 'Bayar Sekarang'}
             </Button>
           </div>
         </div>

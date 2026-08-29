@@ -165,7 +165,7 @@ export default function MidtransPaymentPage() {
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-16 items-center justify-center rounded-lg border border-navy-200 bg-white p-2">
                 {logo ? (
-                  <Image src={logo} alt={selectedMethod.label} className="h-full w-full object-contain" />
+                  <Image src={logo} alt={selectedMethod.label} width={64} height={48} unoptimized className="h-full w-full object-contain" />
                 ) : isQris ? (
                   <QrCode className="h-6 w-6 text-navy-500" />
                 ) : (
@@ -204,7 +204,7 @@ export default function MidtransPaymentPage() {
                   <Image src={qrUrl} alt="QRIS Midtrans" width={320} height={320} unoptimized className="h-full w-full object-contain" />
                 ) : (
                   <>
-                    {logo ? <Image src={logo} alt="QRIS" className="mb-4 h-20 w-32 object-contain" /> : <QrCode className="mb-4 h-14 w-14 text-navy-400" />}
+                    {logo ? <Image src={logo} alt="QRIS" width={128} height={80} unoptimized className="mb-4 h-20 w-32 object-contain" /> : <QrCode className="mb-4 h-14 w-14 text-navy-400" />}
                     <QrCode className="h-28 w-28 text-navy-900" />
                     <p className="mt-4 text-sm font-semibold text-navy-700">{isRealOrder ? 'QRIS belum tersedia dari Midtrans' : 'Preview QRIS Midtrans'}</p>
                   </>

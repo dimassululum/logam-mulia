@@ -32,6 +32,11 @@ export const env = {
   MIDTRANS_CLIENT_KEY: process.env.MIDTRANS_CLIENT_KEY || '',
   MIDTRANS_IS_PRODUCTION: process.env.MIDTRANS_IS_PRODUCTION === 'true',
 
+  DUITKU_MERCHANT_CODE: process.env.DUITKU_MERCHANT_CODE || '',
+  DUITKU_API_KEY: process.env.DUITKU_API_KEY || '',
+  DUITKU_IS_PRODUCTION: process.env.DUITKU_IS_PRODUCTION === 'true',
+  DUITKU_EXPIRY_MINUTES: parseInt(process.env.DUITKU_EXPIRY_MINUTES || '1440', 10),
+
   RAJAONGKIR_API_KEY: process.env.RAJAONGKIR_API_KEY || '',
   RAJAONGKIR_BASE_URL: process.env.RAJAONGKIR_BASE_URL || 'https://rajaongkir.komerce.id/api/v1',
   RAJAONGKIR_ORIGIN_ID: process.env.RAJAONGKIR_ORIGIN_ID || '',

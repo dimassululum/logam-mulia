@@ -1,6 +1,7 @@
 import { PaymentMethod, PaymentMethodStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../core/config/database';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../core/utils/errors';
+import { DUITKU_METHOD_CODES } from '../../duitku/duitku.service';
 import type { UpdatePaymentGatewayModeInput, UpdatePaymentMethodInput } from '../schema/payment-method.schema';
 
 export const QRIS_MANUAL_CODE = 'qris_manual';
@@ -53,6 +54,10 @@ function asConfig(value: Prisma.JsonValue): PaymentMethodConfig {
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizePaymentGatewayMode(value?: string | null): PaymentGatewayMode {
+  return value === 'midtrans' || value === 'duitku' ? value : 'manual';
 }
 
 function normalizeAccountId(value: unknown) {
@@ -208,7 +213,7 @@ function serializePublicPaymentMethod(method: PaymentMethodRecord) {
   };
 }
 
-function serializeCheckoutMidtransMethod(method: PaymentMethodRecord) {
+function serializeCheckoutGatewayMethod(method: PaymentMethodRecord) {
   const serialized = serializePaymentMethod(method);
 
   return {
@@ -251,7 +256,7 @@ export async function getAdminPaymentMethods() {
 
 export async function getPaymentGatewayMode(): Promise<PaymentGatewayMode> {
   const setting = await prisma.setting.findUnique({ where: { key: PAYMENT_GATEWAY_MODE_KEY } });
-  return setting?.value === 'midtrans' ? 'midtrans' : 'manual';
+  return normalizePaymentGatewayMode(setting?.value);
 }
 
 export async function updatePaymentGatewayMode(input: UpdatePaymentGatewayModeInput) {
@@ -262,7 +267,7 @@ export async function updatePaymentGatewayMode(input: UpdatePaymentGatewayModeIn
   });
 
   return {
-    mode: setting.value === 'midtrans' ? 'midtrans' : 'manual',
+    mode: normalizePaymentGatewayMode(setting.value),
   };
 }
 
@@ -287,9 +292,10 @@ export async function getCheckoutPaymentMethods() {
     return { mode, methods };
   }
 
+  const gatewayCodes = mode === 'duitku' ? DUITKU_METHOD_CODES : MIDTRANS_METHOD_CODES;
   const methods = await prisma.paymentMethod.findMany({
     where: {
-      code: { in: MIDTRANS_METHOD_CODES },
+      code: { in: gatewayCodes },
       isActive: true,
       isLocked: false,
       status: PaymentMethodStatus.READY,
@@ -299,7 +305,7 @@ export async function getCheckoutPaymentMethods() {
 
   return {
     mode,
-    methods: methods.map(serializeCheckoutMidtransMethod),
+    methods: methods.map(serializeCheckoutGatewayMethod),
   };
 }
 
@@ -388,6 +394,23 @@ export async function resolveActivePaymentMethodForOrder(code: string, bankAccou
       category: method.category,
       config: asConfig(method.config),
     };
+  }
+
+  if (mode === 'duitku' && DUITKU_METHOD_CODES.includes(method.code as typeof DUITKU_METHOD_CODES[number])) {
+    if (!method.isActive || method.isLocked || method.status !== PaymentMethodStatus.READY) {
+      throw new BadRequestError('Metode pembayaran tidak tersedia. Silakan pilih metode pembayaran lain.');
+    }
+
+    return {
+      code: method.code,
+      label: method.label,
+      category: method.category,
+      config: asConfig(method.config),
+    };
+  }
+
+  if (mode !== 'manual') {
+    throw new BadRequestError('Metode pembayaran tidak tersedia untuk mode pembayaran aktif.');
   }
 
   if (!serialized.isUsable) {

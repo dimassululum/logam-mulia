@@ -1,0 +1,1 @@
+ALTER TYPE "PaymentMethodCategory" ADD VALUE IF NOT EXISTS 'RETAIL';

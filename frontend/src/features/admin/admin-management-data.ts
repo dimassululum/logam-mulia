@@ -81,6 +81,13 @@ export interface PaymentMethodConfig {
   paymentType?: string
   transactionStatus?: string
   fraudStatus?: string
+  reference?: string
+  paymentUrl?: string
+  statusCode?: string
+  statusMessage?: string
+  paymentCode?: string
+  publisherOrderId?: string
+  settlementDate?: string
   vaNumber?: string
   billKey?: string
   billerCode?: string

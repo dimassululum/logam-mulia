@@ -26,6 +26,22 @@ const MAX_SAVINGS_BOOK_BYTES = MAX_SAVINGS_BOOK_MB * 1024 * 1024
 const BANK_ACCOUNT_SLOTS = ['1', '2', '3'] as const
 const MANUAL_METHOD_CODES = ['qris_manual', 'bank_transfer']
 const MIDTRANS_METHOD_CODES = ['bri_va', 'bni_va', 'mandiri_va', 'cimb_va', 'permata_va', 'qris_midtrans']
+const DUITKU_METHOD_CODES = [
+  'duitku_bri_va',
+  'duitku_bni_va',
+  'duitku_mandiri_va',
+  'duitku_cimb_va',
+  'duitku_bsi_va',
+  'duitku_danamon_va',
+  'duitku_permata_va',
+  'duitku_maybank_va',
+  'duitku_sampoerna_va',
+  'duitku_artha_graha_va',
+  'duitku_neo_va',
+  'duitku_alfamart',
+  'duitku_pegadaian',
+  'duitku_pos',
+]
 
 interface PaymentMethodForm {
   isActive: boolean
@@ -91,6 +107,12 @@ function getBankAccountLabel(account: BankAccountConfig) {
 function getBankAccountSubtitle(account: BankAccountConfig) {
   if (!account.accountNumber?.trim()) return `Slot rekening transfer ${account.id}`
   return `${account.accountNumber}${account.accountHolder?.trim() ? ` a.n. ${account.accountHolder}` : ''}`
+}
+
+function getPaymentModeLabel(mode: PaymentGatewayMode) {
+  if (mode === 'midtrans') return 'Midtrans'
+  if (mode === 'duitku') return 'Duitku'
+  return 'Manual'
 }
 
 function getAttachmentKind(url: string) {
@@ -226,7 +248,7 @@ export default function PaymentMethodManagementScreen() {
       const nextMode = await updateAdminPaymentGatewayMode(pendingPaymentMode)
       setPaymentMode(nextMode)
       setPendingPaymentMode(null)
-      setToast({ message: `Mode pembayaran diubah ke ${nextMode === 'manual' ? 'Manual' : 'Midtrans'}.`, tone: 'success' })
+      setToast({ message: `Mode pembayaran diubah ke ${getPaymentModeLabel(nextMode)}.`, tone: 'success' })
     } catch (error) {
       setToast({ message: getErrorMessage(error, 'Gagal mengubah mode pembayaran.'), tone: 'error' })
     } finally {
@@ -234,7 +256,7 @@ export default function PaymentMethodManagementScreen() {
     }
   }
 
-  async function handleToggleMidtransMethod(method: PaymentMethodRecord, checked: boolean) {
+  async function handleToggleGatewayMethod(method: PaymentMethodRecord, checked: boolean) {
     setTogglingCode(method.code)
     try {
       const updated = await updateAdminPaymentMethod(method.code, { isActive: checked })
@@ -409,7 +431,7 @@ export default function PaymentMethodManagementScreen() {
           <div key={`${method.code}-${account.id}-name`} className="flex items-center gap-3">
             <div className="flex h-10 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-navy-50 p-2">
               {bankLogo ? (
-                <Image src={bankLogo} alt={account.bankName || getBankAccountLabel(account)} className="h-full w-full object-contain" />
+                <Image src={bankLogo} alt={account.bankName || getBankAccountLabel(account)} width={64} height={48} unoptimized className="h-full w-full object-contain" />
               ) : (
                 <span className="text-xs font-bold text-navy-400">BANK</span>
               )}
@@ -431,54 +453,67 @@ export default function PaymentMethodManagementScreen() {
     })
   })
 
-  const midtransMethods = MIDTRANS_METHOD_CODES
-    .map((code) => methods.find((method) => method.code === code))
-    .filter((method): method is PaymentMethodRecord => Boolean(method))
-  const midtransTableRows = midtransMethods.map((method) => {
-    const logo = getPaymentLogo(method.label)
+  function buildGatewayTableRows(methodCodes: string[], providerLabel: string) {
+    const gatewayMethods = methodCodes
+      .map((code) => methods.find((method) => method.code === code))
+      .filter((method): method is PaymentMethodRecord => Boolean(method))
 
-    return {
-      id: method.code,
-      mobileTitle: method.label,
-      mobileSubtitle: method.category === 'QRIS' ? 'Midtrans QRIS' : undefined,
-      mobileAside: <MethodStatusBadge method={method} />,
-      mobileMeta: (
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-semibold text-navy-600">Aktifkan</span>
-          <Toggle
-            checked={method.isActive}
-            disabled={togglingCode === method.code}
-            onChange={(checked) => handleToggleMidtransMethod(method, checked)}
-          />
-        </div>
-      ),
-      cells: [
-        <div key={`${method.code}-name`} className="flex items-center gap-3">
-          <div className="flex h-10 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-white p-2">
-            {logo ? (
-              <Image src={logo} alt={method.label} className="h-full w-full object-contain" />
-            ) : (
-              <span className="text-xs font-bold text-navy-400">{method.label}</span>
-            )}
+    return gatewayMethods.map((method) => {
+      const logo = getPaymentLogo(method.label) ?? resolvePublicAssetUrl(method.config.imageUrl)
+
+      return {
+        id: method.code,
+        mobileTitle: method.label,
+        mobileSubtitle: method.category === 'QRIS' ? `${providerLabel} QRIS` : method.category === 'RETAIL' ? `${providerLabel} Retail` : undefined,
+        mobileAside: <MethodStatusBadge method={method} />,
+        mobileMeta: (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-navy-600">Aktifkan</span>
+            <Toggle
+              checked={method.isActive}
+              disabled={togglingCode === method.code}
+              onChange={(checked) => handleToggleGatewayMethod(method, checked)}
+            />
           </div>
-          <div>
-            <p className="font-semibold text-navy-900">{method.label}</p>
-            {method.category === 'QRIS' ? (
-              <p className="mt-0.5 text-xs font-medium text-navy-500">Midtrans QRIS</p>
-            ) : null}
-          </div>
-        </div>,
-        <MethodStatusBadge key={`${method.code}-status`} method={method} />,
-        <div key={`${method.code}-toggle`} className="flex justify-end">
-          <Toggle
-            checked={method.isActive}
-            disabled={togglingCode === method.code}
-            onChange={(checked) => handleToggleMidtransMethod(method, checked)}
-          />
-        </div>,
-      ],
-    }
-  })
+        ),
+        cells: [
+          <div key={`${method.code}-name`} className="flex items-center gap-3">
+            <div className="flex h-10 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-navy-100 bg-white p-2">
+              {logo ? (
+                <Image src={logo} alt={method.label} width={64} height={40} unoptimized className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs font-bold text-navy-400">{method.label}</span>
+              )}
+            </div>
+            <div>
+              <p className="font-semibold text-navy-900">{method.label}</p>
+              {method.category === 'QRIS' || method.category === 'RETAIL' ? (
+                <p className="mt-0.5 text-xs font-medium text-navy-500">
+                  {method.category === 'QRIS' ? `${providerLabel} QRIS` : `${providerLabel} Retail`}
+                </p>
+              ) : null}
+            </div>
+          </div>,
+          <MethodStatusBadge key={`${method.code}-status`} method={method} />,
+          <div key={`${method.code}-toggle`} className="flex justify-end">
+            <Toggle
+              checked={method.isActive}
+              disabled={togglingCode === method.code}
+              onChange={(checked) => handleToggleGatewayMethod(method, checked)}
+            />
+          </div>,
+        ],
+      }
+    })
+  }
+
+  const midtransTableRows = buildGatewayTableRows(MIDTRANS_METHOD_CODES, 'Midtrans')
+  const duitkuTableRows = buildGatewayTableRows(DUITKU_METHOD_CODES, 'Duitku')
+  const activeRows = paymentMode === 'manual'
+    ? manualTableRows
+    : paymentMode === 'midtrans'
+      ? midtransTableRows
+      : duitkuTableRows
 
   const qrisImageUrl = resolvePublicAssetUrl(form.imageUrl)
   const visibleBankAccounts = selectedMethod?.code === 'bank_transfer' && selectedBankAccountId
@@ -494,9 +529,9 @@ export default function PaymentMethodManagementScreen() {
 
       <InlineToast toast={toast} />
 
-      <Card padding="sm" className="max-w-md">
-        <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-navy-600 bg-white p-0.5">
-          {(['manual', 'midtrans'] as const).map((mode) => {
+      <Card padding="sm" className="max-w-xl">
+        <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-navy-600 bg-white p-0.5">
+          {(['manual', 'midtrans', 'duitku'] as const).map((mode) => {
             const isActive = paymentMode === mode
             return (
               <button
@@ -509,7 +544,7 @@ export default function PaymentMethodManagementScreen() {
                   isActive ? 'bg-navy-900 text-white' : 'text-navy-800 hover:bg-navy-50'
                 }`}
               >
-                {mode === 'manual' ? 'Manual' : 'Midtrans'}
+                {getPaymentModeLabel(mode)}
               </button>
             )
           })}
@@ -529,13 +564,19 @@ export default function PaymentMethodManagementScreen() {
             { id: 'status', label: 'Status', className: 'w-[25%]' },
             { id: 'edit', label: <span className="sr-only">{paymentMode === 'manual' ? 'Edit' : 'Aktifkan'}</span>, className: 'w-[20%] text-right' },
           ]}
-          rows={paymentMode === 'manual' ? manualTableRows : midtransTableRows}
+          rows={activeRows}
           emptyState={
             <AdminEmptyState
-              title={paymentMode === 'manual' ? 'Belum ada metode manual' : 'Belum ada metode Midtrans'}
+              title={
+                paymentMode === 'manual'
+                  ? 'Belum ada metode manual'
+                  : paymentMode === 'midtrans'
+                    ? 'Belum ada metode Midtrans'
+                    : 'Belum ada metode Duitku'
+              }
               description={paymentMode === 'manual'
                 ? 'Metode QRIS Manual dan Transfer Bank belum tersedia.'
-                : 'Jalankan migrasi terbaru untuk mengisi metode Midtrans.'}
+                : `Jalankan migrasi terbaru untuk mengisi metode ${getPaymentModeLabel(paymentMode)}.`}
             />
           }
         />
@@ -555,7 +596,7 @@ export default function PaymentMethodManagementScreen() {
             <div>
               <p className="text-sm font-bold">Yakin ingin mengubah mode pembayaran?</p>
               <p className="mt-1 text-sm">
-                Mode aktif akan berubah ke {pendingPaymentMode === 'manual' ? 'Manual' : 'Midtrans'} di halaman admin pembayaran.
+                Mode aktif akan berubah ke {pendingPaymentMode ? getPaymentModeLabel(pendingPaymentMode) : '-'} di halaman admin pembayaran.
               </p>
             </div>
           </div>
@@ -639,7 +680,7 @@ export default function PaymentMethodManagementScreen() {
                         <div className="flex items-center gap-3">
                           <div className="flex h-12 w-16 items-center justify-center rounded-lg border border-navy-100 bg-navy-50 p-2">
                             {bankLogo ? (
-                              <Image src={bankLogo} alt={account.bankName || `Transfer Bank ${account.id}`} className="h-full w-full object-contain" />
+                              <Image src={bankLogo} alt={account.bankName || `Transfer Bank ${account.id}`} width={64} height={48} unoptimized className="h-full w-full object-contain" />
                             ) : (
                               <span className="text-xs font-bold text-navy-400">BANK</span>
                             )}

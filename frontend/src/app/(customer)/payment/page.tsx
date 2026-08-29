@@ -88,7 +88,7 @@ export default function PaymentPage() {
             <div className="mb-5 flex items-center gap-3">
               <div className="flex h-11 w-14 items-center justify-center rounded-lg border border-gold-200 bg-gold-50 p-2 text-gold-700">
                 {bankLogo ? (
-                  <Image src={bankLogo} alt={paymentConfig.bankName || 'Transfer Bank'} className="h-full w-full object-contain" />
+                  <Image src={bankLogo} alt={paymentConfig.bankName || 'Transfer Bank'} width={64} height={48} unoptimized className="h-full w-full object-contain" />
                 ) : (
                   <CreditCard className="h-6 w-6" />
                 )}

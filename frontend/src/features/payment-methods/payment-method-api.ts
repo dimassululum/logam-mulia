@@ -3,9 +3,9 @@ import { resolvePublicApiBaseUrl } from '@/core/lib/public-url'
 
 const API_URL = resolvePublicApiBaseUrl()
 
-export type PaymentMethodCategory = 'QRIS' | 'BANK_TRANSFER' | 'VIRTUAL_ACCOUNT'
+export type PaymentMethodCategory = 'QRIS' | 'BANK_TRANSFER' | 'VIRTUAL_ACCOUNT' | 'RETAIL'
 export type PaymentMethodStatus = 'READY' | 'COMING_SOON'
-export type PaymentGatewayMode = 'manual' | 'midtrans'
+export type PaymentGatewayMode = 'manual' | 'midtrans' | 'duitku'
 
 export interface PaymentMethodConfig {
   imageUrl?: string
@@ -14,6 +14,15 @@ export interface PaymentMethodConfig {
   accountHolder?: string
   savingsBookAttachmentUrl?: string
   instructions?: string
+  provider?: string
+  channel?: string
+  reference?: string
+  paymentUrl?: string
+  vaNumber?: string
+  qrString?: string
+  statusCode?: string
+  statusMessage?: string
+  paymentCode?: string
   bankAccounts?: BankAccountConfig[]
 }
 

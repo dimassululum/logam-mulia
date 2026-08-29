@@ -24,6 +24,7 @@ import orderRoutes from '../features/orders/routes/order.routes';
 import metalPriceRoutes from '../features/metal-prices/routes/metal-price.routes';
 import paymentMethodRoutes from '../features/payment-methods/routes/payment-method.routes';
 import midtransRoutes from '../features/midtrans/midtrans.routes';
+import duitkuRoutes from '../features/duitku/duitku.routes';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -122,6 +123,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/metal-prices', metalPriceRoutes);
 app.use('/api/payment-methods', paymentMethodRoutes);
 app.use('/api/midtrans', midtransRoutes);
+app.use('/api/duitku', duitkuRoutes);
 
 // ─── 404 Handler ───────────────────────────────────────────────────────────
 app.use((_req, res) => {

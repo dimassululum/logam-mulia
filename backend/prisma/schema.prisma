@@ -46,6 +46,7 @@ enum PaymentMethodCategory {
   QRIS
   BANK_TRANSFER
   VIRTUAL_ACCOUNT
+  RETAIL
 }
 
 enum PaymentMethodStatus {

@@ -14,6 +14,16 @@ import {
   type MidtransNotificationPayload,
   type ParsedMidtransPayment,
 } from '../../midtrans/midtrans.service';
+import {
+  chargeDuitkuPayment,
+  extractDuitkuMethodCode,
+  getDuitkuTransactionStatus,
+  parseDuitkuCallback,
+  parseDuitkuPayment,
+  verifyDuitkuCallbackSignature,
+  type DuitkuCallbackPayload,
+  type ParsedDuitkuPayment,
+} from '../../duitku/duitku.service';
 import type { CreateOrderInput, UpdateOrderStatusInput } from '../schema/order.schema';
 
 const orderInclude = {
@@ -117,12 +127,20 @@ function isMidtransMethodCode(code?: string | null) {
   return Boolean(code && extractMidtransMethodCode(code));
 }
 
+function isDuitkuMethodCode(code?: string | null) {
+  return Boolean(code && extractDuitkuMethodCode(code));
+}
+
+function isAutomaticGatewayMethodCode(code?: string | null) {
+  return isMidtransMethodCode(code) || isDuitkuMethodCode(code);
+}
+
 function isPrismaUniqueConstraintError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
 function assertIdempotentOrderCanBeReturned(order: OrderWithDetails) {
-  if (!order.paymentMethodCode || !isMidtransMethodCode(order.paymentMethodCode)) return;
+  if (!order.paymentMethodCode || !isAutomaticGatewayMethodCode(order.paymentMethodCode)) return;
   if (order.status === OrderStatus.CANCELLED || order.midtransTransactionId) return;
 
   throw new BadRequestError('Transaksi pembayaran sedang diproses. Tunggu sebentar lalu cek halaman pembayaran atau riwayat pesanan.');
@@ -155,6 +173,25 @@ function buildMidtransPaymentConfig(baseConfig: Prisma.JsonValue | null | undefi
   } satisfies Prisma.InputJsonObject;
 }
 
+function buildDuitkuPaymentConfig(baseConfig: Prisma.JsonValue | null | undefined, payment: ParsedDuitkuPayment) {
+  const base = baseConfig && typeof baseConfig === 'object' && !Array.isArray(baseConfig) ? baseConfig : {};
+
+  return {
+    ...base,
+    provider: 'duitku',
+    reference: payment.reference,
+    paymentUrl: payment.paymentUrl,
+    vaNumber: payment.vaNumber,
+    qrString: payment.qrString,
+    amount: payment.amount,
+    statusCode: payment.statusCode,
+    statusMessage: payment.statusMessage,
+    paymentCode: payment.paymentCode,
+    publisherOrderId: payment.publisherOrderId,
+    settlementDate: payment.settlementDate,
+  } satisfies Prisma.InputJsonObject;
+}
+
 function getMidtransPaymentReadinessError(methodCode: string, payment: ParsedMidtransPayment) {
   const transactionStatus = payment.transactionStatus?.toLowerCase();
   const fraudStatus = payment.fraudStatus?.toLowerCase();
@@ -175,6 +212,24 @@ function getMidtransPaymentReadinessError(methodCode: string, payment: ParsedMid
   return payment.vaNumber ? null : `Nomor Virtual Account belum diterbitkan oleh Midtrans. ${contactAdminMessage}`;
 }
 
+function getDuitkuPaymentReadinessError(payment: ParsedDuitkuPayment) {
+  const contactAdminMessage = 'Silakan hubungi admin untuk jalur pembayaran yang aman.';
+
+  if (payment.statusCode && payment.statusCode !== '00') {
+    return `Transaksi Duitku belum bisa dibuat: ${payment.statusMessage || payment.statusCode}. ${contactAdminMessage}`;
+  }
+
+  if (!payment.reference) {
+    return `Reference pembayaran belum diterbitkan oleh Duitku. ${contactAdminMessage}`;
+  }
+
+  if (!payment.paymentUrl && !payment.vaNumber && !payment.qrString) {
+    return `Instruksi pembayaran belum diterbitkan oleh Duitku. ${contactAdminMessage}`;
+  }
+
+  return null;
+}
+
 function getOrderStatusFromMidtrans(transactionStatus?: string, fraudStatus?: string) {
   const normalizedTransactionStatus = transactionStatus?.toLowerCase();
   const normalizedFraudStatus = fraudStatus?.toLowerCase();
@@ -186,6 +241,13 @@ function getOrderStatusFromMidtrans(transactionStatus?: string, fraudStatus?: st
   if (normalizedTransactionStatus === 'settlement') return OrderStatus.PAID;
   if (['pending', 'deny', 'failure'].includes(normalizedTransactionStatus || '')) return OrderStatus.UNPAID;
   if (['cancel', 'expire'].includes(normalizedTransactionStatus || '')) return OrderStatus.CANCELLED;
+  return null;
+}
+
+function getOrderStatusFromDuitku(statusCode?: string) {
+  if (statusCode === '00') return OrderStatus.PAID;
+  if (statusCode === '01') return OrderStatus.UNPAID;
+  if (statusCode === '02') return OrderStatus.CANCELLED;
   return null;
 }
 
@@ -798,6 +860,65 @@ async function applyMidtransStatusToOrder(existing: OrderWithDetails, payload: M
   return order;
 }
 
+async function applyDuitkuStatusToOrder(existing: OrderWithDetails, payment: ParsedDuitkuPayment) {
+  const nextStatus = getOrderStatusFromDuitku(payment.statusCode);
+  const statusChanged = Boolean(nextStatus && existing.status !== nextStatus);
+
+  const order = await prisma.order.update({
+    where: { id: existing.id },
+    data: {
+      ...(nextStatus ? { status: nextStatus } : {}),
+      midtransTransactionId: payment.reference ?? existing.midtransTransactionId,
+      midtransPaymentType: payment.paymentCode ?? existing.midtransPaymentType,
+      midtransTransactionStatus: payment.statusCode ?? existing.midtransTransactionStatus,
+      midtransFraudStatus: payment.statusMessage ?? existing.midtransFraudStatus,
+      midtransRawResponse: payment.rawResponse,
+      paymentMethodConfig: buildDuitkuPaymentConfig(existing.paymentMethodConfig, payment),
+      ...(nextStatus === OrderStatus.CANCELLED && {
+        cancelledAt: existing.cancelledAt ?? new Date(),
+        cancelReason: existing.cancelReason ?? `Duitku ${payment.statusMessage || payment.statusCode || 'cancelled'}.`,
+      }),
+      ...(statusChanged && {
+        statusLogs: {
+          create: {
+            status: nextStatus!,
+            note: `Status Duitku berubah menjadi ${payment.statusMessage || payment.statusCode || '-'}.`,
+          },
+        },
+      }),
+    },
+    include: orderInclude,
+  });
+
+  if (statusChanged && nextStatus === OrderStatus.PAID) {
+    queuePaymentConfirmedNotification(order);
+  }
+
+  return order;
+}
+
+async function applyDuitkuCallbackToOrder(existing: OrderWithDetails, payload: DuitkuCallbackPayload) {
+  let payment = parseDuitkuCallback(payload);
+
+  try {
+    const statusPayload = await getDuitkuTransactionStatus(payload.merchantOrderId || existing.id);
+    payment = parseDuitkuPayment({
+      ...payload,
+      ...statusPayload,
+      paymentCode: payload.paymentCode,
+      publisherOrderId: payload.publisherOrderId,
+      settlementDate: payload.settlementDate,
+    } as Record<string, unknown>);
+  } catch (error) {
+    logger.warn('Gagal cek ulang status Duitku saat menerima callback', {
+      orderId: existing.id,
+      error: error instanceof Error ? error.message : error,
+    });
+  }
+
+  return applyDuitkuStatusToOrder(existing, payment);
+}
+
 async function syncMidtransOrderStatusIfNeeded(order: OrderWithDetails) {
   if (
     !order.paymentMethodCode
@@ -1019,6 +1140,70 @@ export async function createOrder(input: CreateOrderInput) {
     }
   }
 
+  if (isDuitkuMethodCode(paymentMethod.code)) {
+    try {
+      const duitkuMethodCode = extractDuitkuMethodCode(paymentMethod.code);
+      if (!duitkuMethodCode) throw new BadRequestError('Metode Duitku tidak valid.');
+
+      const payment = await chargeDuitkuPayment({
+        orderId: order.id,
+        grossAmount: toMoney(order.grandTotal),
+        methodCode: duitkuMethodCode,
+        customer: {
+          firstName: input.customerName,
+          email: input.email.trim().toLowerCase(),
+          phone: input.customerPhone || user.phone,
+          address: input.shippingAddress,
+          city: input.deliveryType === 'butik' ? input.boutiqueName || input.shippingCity : input.shippingCity,
+          postalCode: input.shippingPostalCode,
+        },
+      });
+      const paymentReadinessError = getDuitkuPaymentReadinessError(payment);
+
+      const updatedOrder = await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          midtransTransactionId: payment.reference,
+          midtransPaymentType: payment.paymentCode ?? (paymentMethod.config as { channel?: string }).channel,
+          midtransTransactionStatus: payment.statusCode,
+          midtransFraudStatus: payment.statusMessage,
+          midtransRawResponse: payment.rawResponse,
+          paymentMethodConfig: buildDuitkuPaymentConfig(order.paymentMethodConfig, payment),
+          statusLogs: {
+            create: {
+              status: OrderStatus.UNPAID,
+              note: paymentReadinessError || `Transaksi Duitku dibuat untuk metode ${paymentMethod.label}.`,
+            },
+          },
+        },
+        include: orderInclude,
+      });
+
+      if (paymentReadinessError) {
+        throw new BadRequestError(paymentReadinessError);
+      }
+
+      return mapOrder(updatedOrder);
+    } catch (error) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          status: OrderStatus.UNPAID,
+          cancelReason: null,
+          cancelledAt: null,
+          statusLogs: {
+            create: {
+              status: OrderStatus.UNPAID,
+              note: error instanceof Error ? error.message : 'Gagal membuat transaksi Duitku.',
+            },
+          },
+        },
+      });
+
+      throw error;
+    }
+  }
+
   const mappedOrder = mapOrder(order);
 
   return mappedOrder;
@@ -1083,8 +1268,8 @@ export async function uploadPaymentProof(id: string, userId: string, file: Expre
     throw new BadRequestError('Bukti pembayaran hanya bisa diupload untuk pesanan yang masih menunggu pembayaran.');
   }
 
-  if (isMidtransMethodCode(existing.paymentMethodCode)) {
-    throw new BadRequestError('Pembayaran Midtrans tidak perlu upload bukti pembayaran.');
+  if (isAutomaticGatewayMethodCode(existing.paymentMethodCode)) {
+    throw new BadRequestError('Pembayaran gateway otomatis tidak perlu upload bukti pembayaran.');
   }
 
   const order = await prisma.order.update({
@@ -1162,5 +1347,27 @@ export async function handleMidtransNotification(payload: MidtransNotificationPa
   }
 
   const order = await applyMidtransStatusToOrder(existing, payload);
+  return mapOrder(order);
+}
+
+export async function handleDuitkuCallback(payload: DuitkuCallbackPayload) {
+  verifyDuitkuCallbackSignature(payload);
+
+  if (!payload.merchantOrderId) {
+    throw new BadRequestError('merchantOrderId Duitku tidak tersedia.');
+  }
+
+  const existing = await prisma.order.findUnique({ where: { id: payload.merchantOrderId }, include: orderInclude });
+  if (!existing) {
+    logger.warn(`Callback Duitku diabaikan karena order tidak ditemukan: ${payload.merchantOrderId}`);
+    return {
+      ignored: true,
+      reason: 'order_not_found',
+      orderId: payload.merchantOrderId,
+      resultCode: payload.resultCode ?? null,
+    };
+  }
+
+  const order = await applyDuitkuCallbackToOrder(existing, payload);
   return mapOrder(order);
 }

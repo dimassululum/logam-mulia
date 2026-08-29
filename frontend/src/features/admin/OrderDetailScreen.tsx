@@ -289,10 +289,11 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
   const publicKtpUrl = getPublicKtpUrl(order)
   const publicPaymentProofUrl = getPublicPaymentProofUrl(order)
   const normalizedStatus = normalizeOrderStatus(order.status)
-  const isMidtransOrder = order.paymentMethodConfig?.provider === 'midtrans'
-  const isMidtransPaid = isMidtransOrder && ['paid', 'success', 'completed', 'selesai'].includes(normalizedStatus)
+  const isGatewayOrder = ['midtrans', 'duitku'].includes(String(order.paymentMethodConfig?.provider || ''))
+  const isGatewayPaid = isGatewayOrder && ['paid', 'success', 'completed', 'selesai'].includes(normalizedStatus)
+  const gatewayProviderLabel = order.paymentMethodConfig?.provider === 'duitku' ? 'Duitku' : 'Midtrans'
   const canCancelOrder = !['canceled', 'refund', 'success'].includes(normalizedStatus)
-  const canMarkPaid = !isMidtransOrder && (normalizedStatus === 'unpaid' || normalizedStatus === 'pending')
+  const canMarkPaid = !isGatewayOrder && (normalizedStatus === 'unpaid' || normalizedStatus === 'pending')
   const canMarkSuccess = normalizedStatus === 'paid'
 
   useEffect(() => {
@@ -544,15 +545,15 @@ function OrderDetailContent({ initialOrder }: { initialOrder: AdminOrderDetailRe
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {isMidtransOrder ? (
+                    {isGatewayOrder ? (
                       <div className="space-y-2">
                         <p className="text-sm font-semibold text-navy-800">
-                          {isMidtransPaid ? 'Pembayaran sudah diterima melalui Midtrans.' : 'Menunggu pembayaran melalui Midtrans.'}
+                          {isGatewayPaid ? `Pembayaran sudah diterima melalui ${gatewayProviderLabel}.` : `Menunggu pembayaran melalui ${gatewayProviderLabel}.`}
                         </p>
                         <p className="text-sm text-navy-600">
-                          {isMidtransPaid
-                            ? 'Anda mungkin perlu menunggu waktu settlement untuk pencairan dana di dashboard Midtrans.'
-                            : 'Status akan diperbarui otomatis setelah Midtrans mengirim notifikasi pembayaran.'}
+                          {isGatewayPaid
+                            ? `Anda mungkin perlu menunggu waktu settlement untuk pencairan dana di dashboard ${gatewayProviderLabel}.`
+                            : `Status akan diperbarui otomatis setelah ${gatewayProviderLabel} mengirim notifikasi pembayaran.`}
                         </p>
                       </div>
                     ) : (
