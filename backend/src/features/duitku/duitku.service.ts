@@ -124,7 +124,7 @@ const DUITKU_CHANNEL_BY_METHOD: Record<DuitkuMethodCode, string> = {
 const API_BASE_URL = env.DUITKU_IS_PRODUCTION
   ? 'https://passport.duitku.com'
   : 'https://sandbox.duitku.com';
-const DUITKU_BANK_DISPLAY_NAME = 'PT. Butik Emas Logam Mulia';
+const DUITKU_BANK_DISPLAY_NAME = 'PT. Butik Emas LM';
 
 function ensureDuitkuCredentials() {
   if (!env.DUITKU_MERCHANT_CODE || !env.DUITKU_API_KEY) {
