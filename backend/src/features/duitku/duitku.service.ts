@@ -192,7 +192,7 @@ export async function chargeDuitkuPayment(input: ChargeDuitkuInput) {
   const signature = hmacSha256(`${env.DUITKU_MERCHANT_CODE}${input.orderId}${paymentAmount}`);
   const callbackUrl = `${env.PUBLIC_API_URL}/api/duitku/callback`;
   const returnUrl = `${env.FRONTEND_URL}/payment/duitku`;
-  const customerName = input.customer.firstName.slice(0, 20) || 'Customer LM';
+  const customerName = DUITKU_BANK_DISPLAY_NAME;
 
   const params = {
     merchantCode: env.DUITKU_MERCHANT_CODE,
